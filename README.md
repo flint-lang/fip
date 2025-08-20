@@ -1,7 +1,7 @@
 <div align="center">
 <p>
     <img width="100" src="https://raw.githubusercontent.com/flint-lang/logo/main/logo.svg">
-    <h1>The Flint Programming Language</h1>
+    <h1>The Flint Interop Protocol</h1>
 </p>
 
 <p>
