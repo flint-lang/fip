@@ -12,7 +12,7 @@ This repository is contains the Flint Interop Protocol implementation.
 </p>
 
 <p>
-    <a href="#"><img src="https://img.shields.io/badge/c++-%2300599C.svg?style=flat&logo=c%2B%2B&logoColor=white"></img></a>
+    <a href="#"><img src="https://img.shields.io/badge/c-%2300599C.svg?style=flat&logo=c%2B%2B&logoColor=white"></img></a>
     <a href="http://opensource.org/licenses/MIT"><img src="https://img.shields.io/github/license/flint-lang/fip?color=black"></img></a>
     <a href="#"><img src="https://img.shields.io/github/stars/flint-lang/fip"></img></a>
     <a href="#"><img src="https://img.shields.io/github/forks/flint-lang/fip"></img></a>
