@@ -6,7 +6,7 @@
 #include <unistd.h>
 
 int main() {
-    interop_modules_t interop_modules = {0};
+    fip_interop_modules_t interop_modules = {0};
 
     // Initialize socket first
     int socket_fd = fip_master_init_socket();
@@ -15,8 +15,14 @@ int main() {
         return 1;
     }
 
+    // Create a buffer used for sending messages
+    char msg_buf[FIP_MSG_SIZE] = {0};
+
     // First parse the config file (fip.toml)
     fip_master_config_t config_file = fip_master_load_config();
+
+    // Create a single message which will be re-used for all messages
+    fip_msg_t msg = {0};
 
     // Only start the fip-c IM if it's enabled in the fip.toml config file
     if (config_file.fip_c_enabled) {
@@ -27,18 +33,38 @@ int main() {
     // Give the fip-c IM time to connect
     fip_print(0, "Waiting for fip-c to connect...");
 
-    // Broadcast a few definitions
-    fip_master_broadcast_message(socket_fd, "foo()->i32");
-    // fip_master_broadcast_message(socket_fd, "foo(f32)->i32");
-    // fip_master_broadcast_message(socket_fd, "foo(f32)");
-    // fip_master_broadcast_message(socket_fd, "foo()");
-    // fip_master_broadcast_message(socket_fd, "bar(u64,f32)->i32");
-    fip_master_broadcast_message(socket_fd, "bar(u64,f32)");
+    // Broadcast a few definitions. These definitions are normally not created
+    // by hand but gathered in the compiler in a list or something similar, so
+    // we actually would not need to to the same as here.
+    msg.type = FIP_MSG_SYMBOL_REQUEST;
+    msg.u.sym_req.type = FIP_SYM_FUNCTION;
+    strncpy(msg.u.sym_req.sig.fn.name, "foo", 3);
+    msg.u.sym_req.sig.fn.rets_len = 1;
+    msg.u.sym_req.sig.fn.rets = malloc(sizeof(fip_sig_type_t));
+    msg.u.sym_req.sig.fn.rets[0].is_mutable = true;
+    msg.u.sym_req.sig.fn.rets[0].type = FIP_I32;
+    // "foo()->i32"
+    fip_master_broadcast_message(socket_fd, msg_buf, &msg);
+
+    strncpy(msg.u.sym_req.sig.fn.name, "bar", 3);
+    msg.u.sym_req.sig.fn.args_len = 2;
+    msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_sig_type_t) * 2);
+    msg.u.sym_req.sig.fn.args[0].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[0].type = FIP_U64;
+    msg.u.sym_req.sig.fn.args[1].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[1].type = FIP_F32;
+    // "bar(u64,f32)->i32"
+    fip_master_broadcast_message(socket_fd, msg_buf, &msg);
 
     // Broadcast kill message
-    fip_master_broadcast_message(socket_fd, "kill");
+    free(msg.u.sym_req.sig.fn.args);
+    free(msg.u.sym_req.sig.fn.rets);
+    msg.type = FIP_MSG_KILL;
+    msg.u.kill.reason = FIP_KILL_FINISH;
+    fip_master_broadcast_message(socket_fd, msg_buf, &msg);
 
     // Clean up
+    sleep(1);
     fip_master_cleanup_socket(socket_fd);
     terminate_all_slaves(&interop_modules); // Fallback cleanup
 

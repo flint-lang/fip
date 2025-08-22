@@ -39,16 +39,12 @@ const char *c_type_names[] = {
     "char *",
 };
 
-typedef enum {
-    FUNCTION,
-} fip_c_symbol_kind_t;
-
 typedef struct {
     char source_file_path[512];
     int line_number;
-    fip_c_symbol_kind_t kind;
+    fip_msg_symbol_type_t type;
     union {
-        fip_fn_sig_t fn;
+        fip_sig_fn_t fn;
     } signature;
 } fip_c_symbol_t;
 
@@ -67,8 +63,8 @@ bool parse_fip_function_line( //
     fip_c_symbol_t symbol = {0};
     strcpy(symbol.source_file_path, file_path);
     symbol.line_number = line_num;
-    symbol.kind = FUNCTION;
-    fip_fn_sig_t fn_sig = {0};
+    symbol.type = FIP_SYM_FUNCTION;
+    fip_sig_fn_t fn_sig = {0};
 
     // Remove leading whitespaces
     char const *start = line;
@@ -108,11 +104,8 @@ bool parse_fip_function_line( //
         return false;
     }
 
-    // Extract function name
-    size_t name_len = paren_open - func_start;
-    fn_sig.name = malloc(name_len + 1);
-    strncpy(fn_sig.name, func_start, name_len);
-    fn_sig.name[name_len] = '\0';
+    // Store function name
+    memcpy(fn_sig.name, func_start, paren_open - func_start);
 
     // Extract all parameter types one by one
     start = paren_open + 1;
@@ -187,7 +180,7 @@ bool scan_c_file_for_fip_exports(const char *file_path) {
                 fip_print(ID, "  Source: '%s'",            //
                     symbols[symbol_count].source_file_path //
                 );
-                fip_print_fn_sig(ID, &(symbols[symbol_count].signature.fn));
+                fip_print_sig_fn(ID, &(symbols[symbol_count].signature.fn));
                 symbol_count++;
             }
         }
@@ -208,6 +201,8 @@ int main(int argc, char *argv[]) {
     char *endptr;
     ID = (unsigned int)strtoul(id_str, &endptr, 10);
     fip_print(ID, "starting...");
+
+    char msg_buf[1024] = {0};
 
     // Connect to master's socket
     int socket_fd = fip_slave_init_socket();
@@ -232,25 +227,26 @@ int main(int argc, char *argv[]) {
     }
 
     // Main loop - wait for messages from master
-    char buffer[256];
-    while (true) {
-        if (fip_slave_receive_message(socket_fd, buffer, sizeof(buffer))) {
+    bool is_running = true;
+    while (is_running) {
+        if (fip_slave_receive_message(socket_fd, msg_buf, FIP_MSG_SIZE)) {
             // Only print the first time we receive a message
-            fip_print(ID, "Received message: '%s'", buffer);
+            fip_print(ID, "Received message");
+            fip_msg_t message = {0};
+            fip_decode_msg(msg_buf, &message);
 
-            // Check for known commands
-            if (strcmp(buffer, "kill") == 0) {
-                fip_print(ID, "Received kill command, shutting down");
-                break;
-            }
-
-            // Try to parse the function signature
-            fip_fn_sig_t fn_sig = fip_parse_fn_signature(ID, buffer);
-            if (fn_sig.name != NULL) {
-                fip_print(ID, "Function signature could be parsed");
-                fip_print_fn_sig(ID, &fn_sig);
-            } else {
-                fip_print(ID, "Function signature could not be parsed");
+            switch (message.type) {
+                case FIP_MSG_KILL:
+                    fip_print(ID, "Received kill command, shutting down");
+                    is_running = false;
+                    break;
+                case FIP_MSG_SYMBOL_REQUEST:
+                    assert(message.u.sym_req.type == FIP_SYM_FUNCTION);
+                    fip_print_sig_fn(ID, &message.u.sym_req.sig.fn);
+                    break;
+                default:
+                    fip_print(ID, "Recieved unknown message");
+                    break;
             }
         }
 
