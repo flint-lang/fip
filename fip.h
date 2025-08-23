@@ -43,12 +43,7 @@
 #define FIP_SLAVE
 #endif
 
-#define FIP_LIB
-#ifdef NO_FIP_LIB
-#undef FIP_LIB
-#endif
-
-#ifdef FIP_LIB
+#ifndef NO_FIP_LIB
 
 /*
  * All the definitions to use inside binding files to bind C to FIP
