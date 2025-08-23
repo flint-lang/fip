@@ -206,11 +206,13 @@ typedef struct {
     } target;
 } fip_msg_compile_request_t;
 
+#define FIP_PATHS_SIZE FIP_MSG_SIZE - 32
+
 /// @typedef `fip_msg_object_response_t`
 /// @brief Struct representing the object response message
 typedef struct {
     char module_name[16];
-    char path[128];
+    char paths[FIP_PATHS_SIZE];
 } fip_msg_object_response_t;
 
 /// @typedef `fip_msg_kill_t`
@@ -663,7 +665,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             // buffer directly
             memcpy(buffer + idx, message->u.obj_res.module_name, 16);
             idx += 16;
-            memcpy(buffer + idx, message->u.obj_res.path, 128);
+            memcpy(buffer + idx, message->u.obj_res.paths, FIP_PATHS_SIZE);
             break;
         case FIP_MSG_KILL:
             // The kill message just adds why the kill happens
@@ -769,7 +771,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             // buffer directly
             memcpy(message->u.obj_res.module_name, buffer + idx, 16);
             idx += 16;
-            memcpy(message->u.obj_res.path, buffer + idx, 128);
+            memcpy(message->u.obj_res.paths, buffer + idx, FIP_PATHS_SIZE);
             break;
         case FIP_MSG_KILL:
             // The kill message just adds why the kill happens
@@ -844,7 +846,7 @@ void fip_free_msg(fip_msg_t *message) {
             break;
         case FIP_MSG_OBJECT_RESPONSE:
             memset(message->u.obj_res.module_name, 0, 16);
-            memset(message->u.obj_res.path, 0, 128);
+            memset(message->u.obj_res.paths, 0, FIP_PATHS_SIZE);
             break;
         case FIP_MSG_KILL:
             // The enum does not need to be changed at all

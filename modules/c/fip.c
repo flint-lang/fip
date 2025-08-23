@@ -296,8 +296,6 @@ int main(int argc, char *argv[]) {
                     break;
                 case FIP_MSG_SYMBOL_REQUEST:
                     fip_print(ID, "Symbol Request");
-                    // On a symbol request we check if we have this symbol in
-                    // one of our source files
                     handle_symbol_request(msg_buf, &message);
                     break;
                 case FIP_MSG_SYMBOL_RESPONSE:
