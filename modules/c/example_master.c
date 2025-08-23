@@ -27,7 +27,7 @@ int main() {
     // Only start the fip-c IM if it's enabled in the fip.toml config file
     if (config_file.fip_c_enabled) {
         fip_print(0, "Starting the fip-c module...");
-        spawn_interop_module(&interop_modules, ".fip/modules/fip-c");
+        fip_spawn_interop_module(&interop_modules, ".fip/modules/fip-c");
     }
 
     // Give the fip-c IM time to connect
@@ -85,7 +85,7 @@ kill:
     // Clean up
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 100000000}, NULL);
     fip_master_cleanup_socket(socket_fd);
-    terminate_all_slaves(&interop_modules); // Fallback cleanup
+    fip_terminate_all_slaves(&interop_modules); // Fallback cleanup
 
     fip_print(0, "Master shutting down");
     return 0;
