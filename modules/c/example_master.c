@@ -41,30 +41,40 @@ int main() {
     strncpy(msg.u.sym_req.sig.fn.name, "foo", 3);
     msg.u.sym_req.sig.fn.rets_len = 1;
     msg.u.sym_req.sig.fn.rets = malloc(sizeof(fip_sig_type_t));
-    msg.u.sym_req.sig.fn.rets[0].is_mutable = true;
+    msg.u.sym_req.sig.fn.rets[0].is_mutable = false;
     msg.u.sym_req.sig.fn.rets[0].type = FIP_I32;
     // "foo()->i32"
-    fip_master_broadcast_message(socket_fd, msg_buf, &msg);
+    nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
+    if (!fip_master_symbol_request(msg_buf, &msg)) {
+        fip_print(0, "Goto kill");
+        goto kill;
+    }
 
     strncpy(msg.u.sym_req.sig.fn.name, "bar", 3);
     msg.u.sym_req.sig.fn.args_len = 2;
     msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_sig_type_t) * 2);
-    msg.u.sym_req.sig.fn.args[0].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[0].is_mutable = false;
     msg.u.sym_req.sig.fn.args[0].type = FIP_U64;
-    msg.u.sym_req.sig.fn.args[1].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[1].is_mutable = false;
     msg.u.sym_req.sig.fn.args[1].type = FIP_F32;
     // "bar(u64,f32)->i32"
-    fip_master_broadcast_message(socket_fd, msg_buf, &msg);
+    nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
+    if (!fip_master_symbol_request(msg_buf, &msg)) {
+        fip_print(0, "Goto kill");
+        goto kill;
+    }
 
+kill:
     // Broadcast kill message
     free(msg.u.sym_req.sig.fn.args);
     free(msg.u.sym_req.sig.fn.rets);
     msg.type = FIP_MSG_KILL;
     msg.u.kill.reason = FIP_KILL_FINISH;
+    nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
     fip_master_broadcast_message(socket_fd, msg_buf, &msg);
 
     // Clean up
-    sleep(1);
+    nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 100000000}, NULL);
     fip_master_cleanup_socket(socket_fd);
     terminate_all_slaves(&interop_modules); // Fallback cleanup
 

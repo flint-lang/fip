@@ -65,6 +65,7 @@
 
 #include "toml/tomlc17.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <poll.h> // poll() for multiplexing I/O
 #include <signal.h>
@@ -77,11 +78,13 @@
 #include <sys/select.h> // for select, FD_SET, etc.
 #include <sys/socket.h> // Socket creation, binding, listening
 #include <sys/un.h>     // Unix domain socket addresses
-#include <unistd.h>     // close(), read(), write() system calls
+#include <time.h>
+#include <unistd.h> // close(), read(), write() system calls
 
 const char *FIP_SOCKET_PATH = "/tmp/fip_socket";
 #define FIP_MAX_SLAVES 64
 #define FIP_MSG_SIZE 1024
+#define FIP_SLAVE_DELAY 1000000 // in nanoseconds
 
 #define RED "\033[31m"
 #define GREEN "\033[32m"
@@ -97,7 +100,7 @@ const char *FIP_SOCKET_PATH = "/tmp/fip_socket";
 /// @brief Enum of all possible FIP types
 ///
 /// @note Only primitive types are supported for now
-typedef enum : unsigned char {
+typedef enum : uint8_t {
     FIP_U8 = 0, // unsigned char
     FIP_U16,    // unsigned short
     FIP_U32,    // unsigned int
@@ -114,18 +117,20 @@ typedef enum : unsigned char {
 
 /// @typedef `fip_msg_type_t`
 /// @bfief Enum of all possible messages the FIP can handle
-typedef enum : unsigned char {
-    FIP_MSG_CONNECT_REQUEST = 0, // Slave trying to connect to master
-    FIP_MSG_SYMBOL_REQUEST,      // Master requesting symbol resolution
-    FIP_MSG_SYMBOL_RESPONSE,     // Slave response of FN_REQ
-    FIP_MSG_COMPILE_REQUEST,     // Master requesting all slaves to compile
-    FIP_MSG_OBJECT_RESPONSE,     // Slave responding compilation with .o file
-    FIP_MSG_KILL = 255,          // Kill command is special
+typedef enum : uint8_t {
+    FIP_MSG_UNKNOWN = 0,     // Unknown message
+    FIP_MSG_CONNECT_REQUEST, // Slave trying to connect to master
+    FIP_MSG_SYMBOL_REQUEST,  // Master requesting symbol resolution
+    FIP_MSG_SYMBOL_RESPONSE, // Slave response of FN_REQ
+    FIP_MSG_COMPILE_REQUEST, // Master requesting all slaves to compile
+    FIP_MSG_OBJECT_RESPONSE, // Slave responding compilation with .o file
+    FIP_MSG_KILL = 255,      // Kill command is special
 } fip_msg_type_t;
 
 /// @typedef `fip_msg_symbol_type_t`
 /// @brief Enum of all possible symbol types
-typedef enum : unsigned char {
+typedef enum : uint8_t {
+    FIP_SYM_UNKNOWN = 0,
     FIP_SYM_FUNCTION,
     FIP_SYM_DATA,
 } fip_msg_symbol_type_t;
@@ -147,9 +152,9 @@ typedef struct {
 /// @brief Struct representing the signature of a FIP-defined function
 typedef struct {
     char name[128];
-    unsigned char args_len;
+    uint8_t args_len;
     fip_sig_type_t *args;
-    unsigned char rets_len;
+    uint8_t rets_len;
     fip_sig_type_t *rets;
 } fip_sig_fn_t;
 
@@ -211,7 +216,7 @@ typedef struct {
 /// @typedef `fip_msg_kill_t`
 /// @brief Struct representing the kill message
 typedef struct {
-    enum : unsigned char {
+    enum : uint8_t {
         FIP_KILL_FINISH = 0,
         FIP_KILL_VERSION_MISMATCH,
     } reason;
@@ -244,14 +249,14 @@ typedef struct {
 /// @param `id` The id of the process to print the message from
 /// @param `format` The format string of the printed message
 /// @param `...` The variadic values to put into the formatted output
-void fip_print(unsigned int id, const char *format, ...);
+void fip_print(uint32_t id, const char *format, ...);
 
 /// @function `fip_print_msg`
 /// @brief Prints the given message from the given module ID
 ///
 /// @param `id` The id of the process to print the message from
 /// @param `message` The message to print
-void fip_print_msg(unsigned int id, const fip_msg_t *message);
+void fip_print_msg(uint32_t id, const fip_msg_t *message);
 
 /// @function `fip_encode_msg`
 /// @brief Encodes a given message into a string and stores it in the buffer
@@ -268,6 +273,12 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message);
 /// @param `message` Pointer to the message where the result is stored
 void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message);
 
+/// @function `fip_free_msg`
+/// @brief Frees a given message
+///
+/// @param `message`
+void fip_free_msg(fip_msg_t *message);
+
 /// @function `fip_parse_type_string`
 /// @brief Parses the given type string and returns the type
 ///
@@ -280,13 +291,13 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message);
 /// @param `sig_len` The length of the signature list
 /// @return `bool` Whether the type was parsable
 bool fip_parse_type_string(       //
-    const unsigned int id,        //
+    const uint32_t id,            //
     const char *type_str,         //
     const char *type_str_table[], //
     size_t start_idx,             //
     size_t end_idx,               //
     fip_sig_type_t **sig,         //
-    unsigned char *sig_len        //
+    uint8_t *sig_len              //
 );
 
 /// @function `fip_parse_fn_signature`
@@ -296,14 +307,21 @@ bool fip_parse_type_string(       //
 /// @param `id` The id of the process in which the signature is parsed
 /// @param `signature` The function signature to parse
 /// @return `fip_sig_fn_t` The parsed function signature
-fip_sig_fn_t fip_parse_fn_signature(unsigned int id, const char *signature);
+fip_sig_fn_t fip_parse_fn_signature(uint32_t id, const char *signature);
 
 /// @function `fip_print_sig_fn`
 /// @brief Prints a parsed function signature to the console
 ///
 /// @param `id` The id of the process in which the signature is printed
 /// @param `sig` The function signature to print
-void fip_print_sig_fn(unsigned int id, fip_sig_fn_t *sig);
+void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig);
+
+/// @function `fip_clone_sig_fn`
+/// @brief Clones a given function signature from the source to the destination
+///
+/// @brief `dest` The signature to fill
+/// @brief `src` The source to clone
+void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src);
 
 /*
  * ====================
@@ -314,7 +332,7 @@ void fip_print_sig_fn(unsigned int id, fip_sig_fn_t *sig);
 #ifdef FIP_MASTER
 
 typedef struct {
-    unsigned char active_count;
+    uint8_t active_count;
     pid_t pids[FIP_MAX_SLAVES];
 } fip_interop_modules_t;
 
@@ -322,6 +340,8 @@ typedef struct {
     int server_fd;
     int client_fds[FIP_MAX_SLAVES];
     int client_count;
+    fip_msg_t responses[FIP_MAX_SLAVES];
+    int response_count;
 } fip_master_state_t;
 
 typedef struct {
@@ -377,6 +397,40 @@ void fip_master_broadcast_message( //
     const fip_msg_t *message       //
 );
 
+/// @function `fip_master_await_responses`
+/// @brief Waits for all slaves to respond with a message
+///
+/// @param `buffer` The buffer in which the recieved messages will be stored
+/// temporarily
+/// @param `responses` The responses of all slaves where the ID of the response
+/// in the array corresponds to the ID of the slave itself
+/// @param `response_count` How many responses we got
+/// @param `expected_msg_type` The type of the expected message
+/// @return `uint8_t` How many responses were faulty (unable to be read) or had
+/// the wrong type
+uint8_t fip_master_await_responses(        //
+    char buffer[FIP_MSG_SIZE],             //
+    fip_msg_t responses[FIP_MAX_SLAVES],   //
+    int *response_count,                   //
+    const fip_msg_type_t expected_msg_type //
+);
+
+/// @function `fip_master_symbol_request`
+/// @brief Broadcasts a symbol request message to all slaves and then awaits all
+/// symbol response messages from all slaves and returns whether the requested
+/// symbol was found
+///
+/// @param `buffer` The buffer in which the to-be-sent message and the recieved
+/// messages will be stored in
+/// @param `message` The symbol request message to send to all slaves
+/// @return `bool` Whether the requested symbol was found in any of the slaves
+///
+/// @note This function asserts the message type to be FIP_MSG_SYMBOL_REQUEST
+bool fip_master_symbol_request( //
+    char buffer[FIP_MSG_SIZE],  //
+    const fip_msg_t *message    //
+);
+
 /// @function `fip_master_cleanup_socket`
 /// @brief Cleans up the socket before terminating the master
 ///
@@ -406,9 +460,9 @@ typedef enum {
 const char *fip_module_enum_str[] = {"c"};
 
 typedef struct {
-    unsigned int sources_len;
+    uint32_t sources_len;
     char **sources;
-    unsigned int compile_flags_len;
+    uint32_t compile_flags_len;
     char **compile_flags;
 } fip_module_c_config_t;
 
@@ -432,9 +486,22 @@ int fip_slave_init_socket();
 ///
 /// @param `socket_fd` The file descriptor id to recieve the message from
 /// @param `buffer` The buffer where to store the recieved message at
-/// @param `buffer_size` The size of the recieved message
 /// @return `bool` Whether a message was recieved
-bool fip_slave_receive_message(int socket_fd, char *buffer, size_t buffer_size);
+bool fip_slave_receive_message(int socket_fd, char buffer[FIP_MSG_SIZE]);
+
+/// @function `fip_slave_send_message`
+/// @brief Sends a message to the socked file descriptor
+///
+/// @param `id` The id of the slave who tries to send the message
+/// @param `socket_fd` The file descriptor to send the message to
+/// @param `buffer` The buffer in which the message to send will be stored
+/// @param `message` The message which will be sent
+void fip_slave_send_message(   //
+    uint32_t id,               //
+    int socket_fd,             //
+    char buffer[FIP_MSG_SIZE], //
+    const fip_msg_t *message   //
+);
 
 /// @function `fip_slave_cleanup_socket`
 /// @brief Cleans up the socket connection to the master's socket
@@ -450,7 +517,7 @@ void fip_slave_cleanup_socket(int socket_fd);
 /// @param `type` The type of the fip module's configuration to load
 /// @return `fip_master_config_t` The loaded configuration
 fip_slave_config_t fip_slave_load_config( //
-    const unsigned int id,                //
+    const uint32_t id,                    //
     const fip_module_enum_t type          //
 );
 
@@ -476,7 +543,7 @@ const char *fip_type_names[] = {
     "str",
 };
 
-void fip_print(unsigned int id, const char *format, ...) {
+void fip_print(uint32_t id, const char *format, ...) {
     if (!format) {
         return;
     }
@@ -503,7 +570,7 @@ void fip_print(unsigned int id, const char *format, ...) {
     printf("\n");
 }
 
-void fip_print_msg(unsigned int id, const fip_msg_t *message) {
+void fip_print_msg(uint32_t id, const fip_msg_t *message) {
     fip_print(id, "TODO: fip_print_msg");
 }
 
@@ -518,7 +585,7 @@ void fip_encode_sig_fn(        //
     *idx += 128;
     // Because each type is a simple char we can store them directly. But we
     // need to store first how many types there are. For that we store the
-    // lengths directly in the buffer. The lengths are unsigned char's annyway
+    // lengths directly in the buffer. The lengths are uint8_t's annyway
     // because which function has more than 256 parameters or return types?
     buffer[(*idx)++] = sig->args_len;
     for (uint8_t i = 0; i < sig->args_len; i++) {
@@ -534,11 +601,14 @@ void fip_encode_sig_fn(        //
 
 void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
     // Clear the buffer
-    memset(buffer, 0, 1024);
+    memset(buffer, 0, FIP_MSG_SIZE);
     // The first character in the buffer is the message type
     int idx = 0;
     buffer[idx++] = message->type;
     switch (message->type) {
+        case FIP_MSG_UNKNOWN:
+            // Sending unknown or faulty message
+            break;
         case FIP_MSG_CONNECT_REQUEST:
             // The connect request just puts the versions into the buffer one by
             // one and is done
@@ -549,6 +619,8 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
         case FIP_MSG_SYMBOL_REQUEST:
             buffer[idx++] = message->u.sym_req.type;
             switch (message->u.sym_req.type) {
+                case FIP_SYM_UNKNOWN:
+                    break;
                 case FIP_SYM_FUNCTION:
                     fip_encode_sig_fn(buffer, &idx, &message->u.sym_req.sig.fn);
                     break;
@@ -564,6 +636,8 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             idx += 16;
             buffer[idx++] = message->u.sym_res.type;
             switch (message->u.sym_res.type) {
+                case FIP_SYM_UNKNOWN:
+                    break;
                 case FIP_SYM_FUNCTION:
                     fip_encode_sig_fn(buffer, &idx, &message->u.sym_res.sig.fn);
                     break;
@@ -609,7 +683,7 @@ void fip_decode_sig_fn(              //
     *idx += 128;
     // Because each type is a simple char we can store them directly. But we
     // need to store first how many types there are. For that we store the
-    // lengths directly in the buffer. The lengths are unsigned char's annyway
+    // lengths directly in the buffer. The lengths are uint8_t's annyway
     // because which function has more than 256 parameters or return types?
     sig->args_len = buffer[(*idx)++];
     if (sig->args_len > 0) {
@@ -638,6 +712,9 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
     int idx = 0;
     message->type = buffer[idx++];
     switch (message->type) {
+        case FIP_MSG_UNKNOWN:
+            // Recieved unknown or faulty message
+            break;
         case FIP_MSG_CONNECT_REQUEST:
             // The connect request just puts the versions into the buffer one by
             // one and is done
@@ -648,6 +725,8 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
         case FIP_MSG_SYMBOL_REQUEST:
             message->u.sym_req.type = buffer[idx++];
             switch (message->u.sym_req.type) {
+                case FIP_SYM_UNKNOWN:
+                    break;
                 case FIP_SYM_FUNCTION:
                     fip_decode_sig_fn(buffer, &idx, &message->u.sym_req.sig.fn);
                     break;
@@ -663,6 +742,8 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             idx += 16;
             message->u.sym_res.type = buffer[idx++];
             switch (message->u.sym_res.type) {
+                case FIP_SYM_UNKNOWN:
+                    break;
                 case FIP_SYM_FUNCTION:
                     fip_decode_sig_fn(buffer, &idx, &message->u.sym_res.sig.fn);
                     break;
@@ -697,6 +778,80 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
     }
 }
 
+void fip_free_msg(fip_msg_t *message) {
+    const fip_msg_type_t msg_type = message->type;
+    message->type = FIP_MSG_UNKNOWN;
+    switch (msg_type) {
+        case FIP_MSG_UNKNOWN:
+            return;
+        case FIP_MSG_CONNECT_REQUEST:
+            message->u.con_req.version.major = 0;
+            message->u.con_req.version.minor = 0;
+            message->u.con_req.version.patch = 0;
+            break;
+        case FIP_MSG_SYMBOL_REQUEST:
+            switch (message->u.sym_req.type) {
+                case FIP_SYM_UNKNOWN:
+                    // Do nothing on already freed / unknwon symbol
+                    break;
+                case FIP_SYM_FUNCTION:
+                    message->u.sym_req.type = FIP_SYM_UNKNOWN;
+                    memset(message->u.sym_req.sig.fn.name, 0, 128);
+                    if (message->u.sym_req.sig.fn.args_len > 0) {
+                        free(message->u.sym_req.sig.fn.args);
+                    }
+                    message->u.sym_req.sig.fn.args_len = 0;
+                    if (message->u.sym_req.sig.fn.rets_len > 0) {
+                        free(message->u.sym_req.sig.fn.rets);
+                    }
+                    message->u.sym_req.sig.fn.rets_len = 0;
+                    break;
+                case FIP_SYM_DATA:
+                    // Not implemented yet
+                    assert(false);
+            }
+            break;
+        case FIP_MSG_SYMBOL_RESPONSE:
+            message->u.sym_res.found = false;
+            memset(message->u.sym_res.module_name, 0, 16);
+            switch (message->u.sym_res.type) {
+                case FIP_SYM_UNKNOWN:
+                    // Do nothing on already freed / unknwon symbol
+                    break;
+                case FIP_SYM_FUNCTION:
+                    message->u.sym_res.type = FIP_SYM_UNKNOWN;
+                    memset(message->u.sym_res.sig.fn.name, 0, 128);
+                    if (message->u.sym_res.sig.fn.args_len > 0) {
+                        free(message->u.sym_res.sig.fn.args);
+                    }
+                    message->u.sym_res.sig.fn.args_len = 0;
+                    if (message->u.sym_res.sig.fn.rets_len > 0) {
+                        free(message->u.sym_res.sig.fn.rets);
+                    }
+                    message->u.sym_res.sig.fn.rets_len = 0;
+                    break;
+                case FIP_SYM_DATA:
+                    // Not implemented yet
+                    assert(false);
+            }
+            break;
+        case FIP_MSG_COMPILE_REQUEST:
+            memset(message->u.com_req.target.arch, 0, 16);
+            memset(message->u.com_req.target.sub, 0, 16);
+            memset(message->u.com_req.target.vendor, 0, 16);
+            memset(message->u.com_req.target.sys, 0, 16);
+            memset(message->u.com_req.target.abi, 0, 16);
+            break;
+        case FIP_MSG_OBJECT_RESPONSE:
+            memset(message->u.obj_res.module_name, 0, 16);
+            memset(message->u.obj_res.path, 0, 128);
+            break;
+        case FIP_MSG_KILL:
+            // The enum does not need to be changed at all
+            break;
+    }
+}
+
 bool is_alpha(char c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
@@ -709,27 +864,27 @@ bool is_alpha_num(char c) {
     return is_alpha(c) || is_digit(c);
 }
 
-void fip_parse_sig_type(    //
-    fip_sig_type_t **sig,   //
-    unsigned char *sig_len, //
-    fip_type_enum_t type    //
+void fip_parse_sig_type(  //
+    fip_sig_type_t **sig, //
+    uint8_t *sig_len,     //
+    fip_type_enum_t type  //
 ) {
-    unsigned int arg_id = *sig_len;
+    uint32_t arg_id = *sig_len;
     (*sig_len)++;
-    unsigned int new_size = sizeof(fip_sig_type_t) * *sig_len;
+    uint32_t new_size = sizeof(fip_sig_type_t) * *sig_len;
     *sig = realloc(*sig, new_size);
     (*sig)[arg_id].is_mutable = false;
     (*sig)[arg_id].type = type;
 }
 
 bool fip_parse_type_string(       //
-    const unsigned int id,        //
+    const uint32_t id,            //
     const char *type_str,         //
     const char *type_str_table[], //
     size_t start_idx,             //
     size_t end_idx,               //
     fip_sig_type_t **sig,         //
-    unsigned char *sig_len        //
+    uint8_t *sig_len              //
 ) {
     char arg_str[64] = {0};
     // Remove all leading and trailing spaces
@@ -755,14 +910,45 @@ bool fip_parse_type_string(       //
     return false;
 }
 
-void fip_print_sig_fn(unsigned int id, fip_sig_fn_t *sig) {
-    fip_print(id, "Function Signature:");
-    fip_print(id, "  name: %s", sig->name);
-    for (unsigned int i = 0; i < sig->args_len; i++) {
-        fip_print(id, "  arg[%u]: %s", i, fip_type_names[sig->args[i].type]);
+void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig) {
+    fip_print(id, "  Function Signature:");
+    fip_print(id, "    name: %s", sig->name);
+    char *mut_text = NULL;
+    for (uint32_t i = 0; i < sig->args_len; i++) {
+        if (sig->args[i].is_mutable) {
+            mut_text = "mut";
+        } else {
+            mut_text = "const";
+        }
+        fip_print(id, "    arg[%u]: %s %s", i, mut_text,
+            fip_type_names[sig->args[i].type]);
     }
-    for (unsigned int i = 0; i < sig->rets_len; i++) {
-        fip_print(id, "  ret[%u]: %s", i, fip_type_names[sig->rets[i].type]);
+    for (uint32_t i = 0; i < sig->rets_len; i++) {
+        if (sig->rets[i].is_mutable) {
+            mut_text = "mut";
+        } else {
+            mut_text = "const";
+        }
+        fip_print(id, "    ret[%u]: %s %s", i, mut_text,
+            fip_type_names[sig->rets[i].type]);
+    }
+}
+
+void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
+    memcpy(dest->name, src->name, 128);
+    dest->args_len = src->args_len;
+    if (src->args_len > 0) {
+        dest->args = malloc(sizeof(fip_sig_type_t) * src->args_len);
+        for (uint8_t i = 0; i < src->args_len; i++) {
+            dest->args[i] = src->args[i];
+        }
+    }
+    dest->rets_len = src->rets_len;
+    if (src->rets_len > 0) {
+        dest->rets = malloc(sizeof(fip_sig_type_t) * src->rets_len);
+        for (uint8_t i = 0; i < src->rets_len; i++) {
+            dest->rets[i] = src->rets[i];
+        }
     }
 }
 
@@ -801,7 +987,7 @@ void terminate_all_slaves(fip_interop_modules_t *modules) {
     // We terminate all slaves as their workloads must have been finished by
     // now (the master has collected the results in the form of the .o
     // files)
-    for (unsigned char i = 0; i < modules->active_count; i++) {
+    for (uint8_t i = 0; i < modules->active_count; i++) {
         if (kill(modules->pids[i], 0)) {
             // Is still running and we are allowed to kill it
             kill(modules->pids[i], SIGTERM);
@@ -908,6 +1094,71 @@ void fip_master_broadcast_message( //
     }
 }
 
+uint8_t fip_master_await_responses(        //
+    char buffer[FIP_MSG_SIZE],             //
+    fip_msg_t responses[FIP_MAX_SLAVES],   //
+    int *response_count,                   //
+    const fip_msg_type_t expected_msg_type //
+) {
+    fip_print(0, "Awaiting Responses");
+    // First we need to clear all old message responses
+    for (uint8_t i = 0; i < *response_count; i++) {
+        fip_free_msg(&responses[i]);
+    }
+    *response_count = 0;
+
+    // Await responses from all slaves
+    uint8_t wrong_count = 0;
+    for (int i = 0; i < master_state.client_count; i++) {
+        if (master_state.client_fds[i] != -1) {
+            memset(buffer, 0, FIP_MSG_SIZE);
+            ssize_t recieved = recv(                                //
+                master_state.client_fds[i], buffer, FIP_MSG_SIZE, 0 //
+            );
+            if (recieved == -1) {
+                fip_print(0, "Failed to recieve message from slave %d", i + 1);
+                wrong_count++;
+                continue;
+            }
+            fip_decode_msg(buffer, &responses[*response_count]);
+            fip_print(0, "Recieved message from slave %d: %d", i + 1,
+                responses[*response_count].type);
+            if (responses[*response_count].type != expected_msg_type) {
+                wrong_count++;
+            }
+            (*response_count)++;
+        }
+    }
+    return wrong_count;
+}
+
+bool fip_master_symbol_request( //
+    char buffer[FIP_MSG_SIZE],  //
+    const fip_msg_t *message    //
+) {
+    assert(message->type == FIP_MSG_SYMBOL_REQUEST);
+    fip_master_broadcast_message(master_state.server_fd, buffer, message);
+    uint8_t wrong_msg_count = fip_master_await_responses( //
+        buffer,                                           //
+        master_state.responses,                           //
+        &master_state.response_count,                     //
+        FIP_MSG_SYMBOL_RESPONSE                           //
+    );
+    fip_print(0, "Wrong message count: %u", wrong_msg_count);
+    // Now we need to check whether any module has the given symbol, if one has
+    // we can continue, if not we need to exit right away
+    bool symbol_found = false;
+    for (uint8_t i = 0; i < master_state.response_count; i++) {
+        if (master_state.responses[i].type == FIP_MSG_SYMBOL_RESPONSE //
+            && master_state.responses[i].u.sym_res.found              //
+        ) {
+            symbol_found = true;
+        }
+    }
+    fip_print(0, "Symbol found: %b", symbol_found);
+    return symbol_found;
+}
+
 void fip_master_cleanup_socket(int socket_fd) {
     // Close all client connections
     for (int i = 0; i < master_state.client_count; i++) {
@@ -971,7 +1222,8 @@ int fip_slave_init_socket() {
         if (connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
             return socket_fd; // Success
         }
-        usleep(100000); // Wait 100ms before retry
+        // Wait 100ms before retry
+        nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 100000000}, NULL);
     }
 
     close(socket_fd);
@@ -980,10 +1232,9 @@ int fip_slave_init_socket() {
 
 bool fip_slave_receive_message( //
     int socket_fd,              //
-    char *buffer,               //
-    size_t buffer_size          //
+    char buffer[FIP_MSG_SIZE]   //
 ) {
-    // printf("fip_slave_recieve_message function called\n");
+    memset(buffer, 0, FIP_MSG_SIZE);
     fd_set read_fds;
     struct timeval timeout;
 
@@ -996,14 +1247,31 @@ bool fip_slave_receive_message( //
     int activity = select(socket_fd + 1, &read_fds, NULL, NULL, &timeout);
 
     if (activity > 0 && FD_ISSET(socket_fd, &read_fds)) {
-        ssize_t received = recv(socket_fd, buffer, buffer_size - 1, 0);
+        ssize_t received = recv(socket_fd, buffer, FIP_MSG_SIZE, 0);
         if (received > 0) {
-            buffer[received] = '\0'; // Null-terminate
             return true;
         }
     }
 
     return false; // No message or error
+}
+
+void fip_slave_send_message(   //
+    uint32_t id,               //
+    int socket_fd,             //
+    char buffer[FIP_MSG_SIZE], //
+    const fip_msg_t *message   //
+) {
+    // First we need to encode the message in the buffer
+    fip_encode_msg(buffer, message);
+
+    ssize_t sent = send(socket_fd, buffer, FIP_MSG_SIZE, 0);
+    if (sent == -1) {
+        fip_print(id, "Failed to send message: %s (fd=%d)", strerror(errno),
+            socket_fd);
+    } else {
+        fip_print(id, "Successfully sent %zd bytes", sent);
+    }
 }
 
 void fip_slave_cleanup_socket(int socket_fd) {
@@ -1013,7 +1281,7 @@ void fip_slave_cleanup_socket(int socket_fd) {
 }
 
 fip_slave_config_t fip_slave_load_config( //
-    const unsigned int id,                //
+    const uint32_t id,                    //
     const fip_module_enum_t type          //
 ) {
     char file_path[32] = ".config/fip/fip-";
@@ -1101,4 +1369,4 @@ fip_slave_config_t fip_slave_load_config( //
 
 #endif // End of #ifdef FIP_IMPLEMENTATION
 
-#endif // End of #ifdef FIP_LIB
+#endif // End of #ifndef NO_FIP_LIB
