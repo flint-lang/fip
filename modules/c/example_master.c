@@ -64,10 +64,19 @@ int main() {
         goto kill;
     }
 
+    // If we came here all definitions have been found in one of the interop
+    // modules. This means that we now can request all modules to compile their
+    // files and give us back the .o files as the responses
+    fip_free_msg(&msg);
+    msg.type = FIP_MSG_COMPILE_REQUEST;
+    if (!fip_master_compile_request(msg_buf, &msg)) {
+        fip_print(0, "Goto kill");
+        goto kill;
+    }
+
 kill:
     // Broadcast kill message
-    free(msg.u.sym_req.sig.fn.args);
-    free(msg.u.sym_req.sig.fn.rets);
+    fip_free_msg(&msg);
     msg.type = FIP_MSG_KILL;
     msg.u.kill.reason = FIP_KILL_FINISH;
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);

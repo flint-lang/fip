@@ -211,6 +211,7 @@ typedef struct {
 /// @typedef `fip_msg_object_response_t`
 /// @brief Struct representing the object response message
 typedef struct {
+    bool has_obj;
     char module_name[16];
     char paths[FIP_PATHS_SIZE];
 } fip_msg_object_response_t;
@@ -280,6 +281,17 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message);
 ///
 /// @param `message`
 void fip_free_msg(fip_msg_t *message);
+
+/// @function `fip_create_hash`
+/// @brief Creates a 8 Byte character hash from the given file path to make
+/// differentiating between different files predictable in size. Each character
+/// in the 8 character hash is one of 63 possible characters (A-Z, a-z, 0-9, _)
+/// which means that the 8 Byte hash can have roughly as many unique hashes as a
+/// equivalent 48 bit number.
+///
+/// @param `hash` The buffer in which to write the hash
+/// @param `file_path` The file path to turn into a 8 Byte hash
+void fip_create_hash(char hash[8], const char *file_path);
 
 /// @function `fip_parse_type_string`
 /// @brief Parses the given type string and returns the type
@@ -431,6 +443,23 @@ uint8_t fip_master_await_responses(        //
 bool fip_master_symbol_request( //
     char buffer[FIP_MSG_SIZE],  //
     const fip_msg_t *message    //
+);
+
+/// @function `fip_master_compile_request`
+/// @brief Broadcasts a compile request message to all slaves and then awaits
+/// all object response messages from all slaves and returns whether all modules
+/// were able to compile their sources
+///
+/// @param `buffer` The buffer in which the to-be-sent message and the recieved
+/// messages will be stored in
+/// @param `message` The compile request message to send to all slaves
+/// @return `bool` Whether all interop modules were able to compile their
+/// source files
+///
+/// @note This function asserts the message type to be FIP_MSG_COMPILE_REQUEST
+bool fip_master_compile_request( //
+    char buffer[FIP_MSG_SIZE],   //
+    const fip_msg_t *message     //
 );
 
 /// @function `fip_master_cleanup_socket`
@@ -663,6 +692,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
         case FIP_MSG_OBJECT_RESPONSE:
             // The sizes of the buffers are known so we can put them into the
             // buffer directly
+            buffer[idx++] = message->u.obj_res.has_obj;
             memcpy(buffer + idx, message->u.obj_res.module_name, 16);
             idx += 16;
             memcpy(buffer + idx, message->u.obj_res.paths, FIP_PATHS_SIZE);
@@ -769,6 +799,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
         case FIP_MSG_OBJECT_RESPONSE:
             // The sizes of the buffers are known so we can put them into the
             // buffer directly
+            message->u.obj_res.has_obj = buffer[idx++];
             memcpy(message->u.obj_res.module_name, buffer + idx, 16);
             idx += 16;
             memcpy(message->u.obj_res.paths, buffer + idx, FIP_PATHS_SIZE);
@@ -851,6 +882,44 @@ void fip_free_msg(fip_msg_t *message) {
         case FIP_MSG_KILL:
             // The enum does not need to be changed at all
             break;
+    }
+}
+
+void fip_create_hash(char hash[8], const char *file_path) {
+    // Valid characters: 1-9, A-Z, a-z (61 characters total)
+    // I choose to remove the '0' char as a possible character to have 61 total
+    // characters. This reduces the number of unique hashes only slighlty but it
+    // makes the char count a prime number, which hopefully increases the hash
+    // distribution, making overlaps much less likely to happen
+    static const char charset[] = "123456789ABCDEFGHIJKLMNOPQRSTU"
+                                  "VWXYZabcdefghijklmnopqrstuvwxyz";
+    const int charset_size = 61;
+
+    // Initialize hash buffer
+    // The value '0' means default and because the hash will not contain a 0 as
+    // it's not in it's char set we only need to check the first character to
+    // tell whether the hashing function succeeded or failed. Hashes do not need
+    // to end with a zero terminator, as we know the size of the hash at
+    // compile-time (8 Bytes)
+    hash[0] = '0';
+    size_t path_len = strlen(file_path);
+    if (path_len == 0) {
+        return;
+    }
+    uint32_t seed = 2166136261U;
+    for (const char *p = file_path; *p; p++) {
+        seed ^= (unsigned char)*p;
+        seed *= 16777619U;
+    }
+    for (int i = 0; i < 8; i++) {
+        uint32_t pos_hash = seed ^ (i * 0x9e3779b9);
+        pos_hash *= 0x85ebca6b;
+        pos_hash ^= pos_hash >> 13;
+        pos_hash *= 0xc2b2ae35;
+        pos_hash ^= pos_hash >> 16;
+
+        hash[i] = charset[pos_hash % 61];
+        seed = pos_hash;
     }
 }
 
@@ -1159,6 +1228,41 @@ bool fip_master_symbol_request( //
     }
     fip_print(0, "Symbol found: %b", symbol_found);
     return symbol_found;
+}
+
+bool fip_master_compile_request( //
+    char buffer[FIP_MSG_SIZE],   //
+    const fip_msg_t *message     //
+) {
+    assert(message->type == FIP_MSG_COMPILE_REQUEST);
+    fip_master_broadcast_message(master_state.server_fd, buffer, message);
+    uint8_t wrong_msg_count = fip_master_await_responses( //
+        buffer,                                           //
+        master_state.responses,                           //
+        &master_state.response_count,                     //
+        FIP_MSG_OBJECT_RESPONSE                           //
+    );
+    if (wrong_msg_count > 0) {
+        fip_print(0, "Recieved %u faulty messages", wrong_msg_count);
+    }
+    // Now we can go through all responses and print all the .o files we
+    // recieved
+    for (uint8_t i = 0; i < master_state.response_count; i++) {
+        const fip_msg_t *response = &master_state.responses[i];
+        if (response->type != FIP_MSG_OBJECT_RESPONSE) {
+            fip_print(0, "Wrong message as response");
+            return false;
+        }
+        if (response->u.obj_res.has_obj) {
+            fip_print(0, "Object response from module: %s",
+                response->u.obj_res.module_name);
+            fip_print(0, "Paths: %s", response->u.obj_res.paths);
+            return true;
+        } else {
+            fip_print(0, "Object response has no objects");
+        }
+    }
+    return true;
 }
 
 void fip_master_cleanup_socket(int socket_fd) {
