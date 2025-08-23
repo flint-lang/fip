@@ -245,6 +245,99 @@ void handle_symbol_request(    //
     fip_slave_send_message(ID, SOCKET_FD, buffer, &response);
 }
 
+bool compile_file(                   //
+    char paths[FIP_PATHS_SIZE],      //
+    const char *file_path,           //
+    const fip_msg_t *compile_message //
+) {
+    // First we need to calculate a hash of the source file's path and then the
+    // compiled object will be stored in the `.fip/cache/` directory as
+    // `HASH.o`. This way each "file path" is not the absolute path to the
+    // object file but a simple hash instead, making it predictable how many
+    // file paths / hashes can fit inside the paths array!
+    //
+    // We need to know the hash before even compiling the file at all
+    char hash[9] = {0};
+    fip_create_hash(hash, file_path);
+    hash[8] = '\0'; // This is only needed for the below strstr function
+
+    // Check if the hash is already part of the paths, if it is we already
+    // compiled the file
+    if (strstr(paths, hash)) {
+        fip_print(ID, "Hash '%.8s' already part of paths", hash);
+        return true;
+    }
+
+    // Build compile command with flags
+    char compile_cmd[1024] = "gcc -c ";
+    // Add all compile flags
+    for (uint32_t i = 0; i < CONFIG.u.c.compile_flags_len; i++) {
+        strcat(compile_cmd, CONFIG.u.c.compile_flags[i]);
+        strcat(compile_cmd, " ");
+    }
+    // Add source and output
+    char temp[256];
+    char output_path[64] = {0};
+    snprintf(output_path, sizeof(output_path), ".fip/cache/%.8s.o", hash);
+    snprintf(temp, sizeof(temp), "%s -o %s", file_path, output_path);
+    strcat(compile_cmd, temp);
+
+    fip_print(ID, "Executing: %s", compile_cmd);
+
+    if (system(compile_cmd) == 0) {
+        fip_print(ID, "Compiled '%.8s' successfully", hash);
+        // Add to paths array. For this we need to find the first null-byte
+        // character in the paths array, that's where we will place our hash at.
+        // The good thing is that we only need to check multiples of 8 so this
+        // check is rather easy.
+        char *dest = paths;
+        uint16_t occupied_bytes = 0;
+        while (*dest != '\0' && occupied_bytes < FIP_PATHS_SIZE) {
+            dest += 8;
+            occupied_bytes += 8;
+        }
+        if (occupied_bytes >= FIP_PATHS_SIZE) {
+            fip_print(ID, "The Paths array is full: %.*s", FIP_PATHS_SIZE,
+                paths);
+            fip_print(ID, "Could not store hash '%s' in it", hash);
+            return false;
+        }
+        memcpy(dest, hash, 8);
+        return true;
+    }
+
+    return false;
+}
+
+void handle_compile_request(   //
+    char buffer[FIP_MSG_SIZE], //
+    const fip_msg_t *message   //
+) {
+    assert(message->type == FIP_MSG_COMPILE_REQUEST);
+    fip_print(ID, "Handle Compile Request");
+    fip_msg_t response = {0};
+    response.type = FIP_MSG_OBJECT_RESPONSE;
+    fip_msg_object_response_t *obj_res = &response.u.obj_res;
+    obj_res->has_obj = false;
+    memcpy(obj_res->module_name, MODULE_NAME, sizeof(MODULE_NAME));
+
+    // We need to go through all symbols and see whether they need to be
+    // compiled
+    for (uint8_t i = 0; i < symbol_count; i++) {
+        if (symbols[i].needed) {
+            if (!compile_file(                                            //
+                    obj_res->paths, symbols[i].source_file_path, message) //
+            ) {
+                obj_res->has_obj = false;
+                break;
+            }
+            obj_res->has_obj = true;
+        }
+    }
+
+    fip_slave_send_message(ID, SOCKET_FD, buffer, &response);
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         printf("The `fip-c` Interop Module needs at least one argument\n");
@@ -309,6 +402,7 @@ int main(int argc, char *argv[]) {
                     break;
                 case FIP_MSG_COMPILE_REQUEST:
                     fip_print(ID, "Compile Request");
+                    handle_compile_request(msg_buf, &message);
                     break;
                 case FIP_MSG_OBJECT_RESPONSE:
                     // The slave should not recieve a message it sends
