@@ -9,4 +9,6 @@ clang "-I$ROOT" -g -std=c17 -o fip-c fip.c "$ROOT/toml/tomlc17.c" || exit 1
 
 cd "$ROOT" || exit 1
 
+cp "$ROOT/modules/c/fip-c" "$ROOT/.fip/modules/fip-c"
+
 "$ROOT/modules/c/example_master"
