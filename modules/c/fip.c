@@ -218,14 +218,14 @@ void handle_symbol_request(    //
             sym_match = true;
             // Now we need to check if the arg and ret types match
             for (uint32_t j = 0; j < sym_fn->args_len; j++) {
-                if (sym_fn->args[j].type != msg_fn->args[i].type ||
-                    sym_fn->args[i].is_mutable != msg_fn->args[i].is_mutable) {
+                if (sym_fn->args[j].type != msg_fn->args[j].type ||
+                    sym_fn->args[j].is_mutable != msg_fn->args[j].is_mutable) {
                     sym_match = false;
                 }
             }
             for (uint32_t j = 0; j < sym_fn->rets_len; j++) {
-                if (sym_fn->rets[j].type != msg_fn->rets[i].type ||
-                    sym_fn->rets[i].is_mutable != msg_fn->rets[i].is_mutable) {
+                if (sym_fn->rets[j].type != msg_fn->rets[j].type ||
+                    sym_fn->rets[j].is_mutable != msg_fn->rets[j].is_mutable) {
                     sym_match = false;
                 }
             }
