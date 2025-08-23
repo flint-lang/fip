@@ -1,2 +1,2 @@
 sources = ["modules/c/src/test.c"]
-compile_flags = []
+compile_flags = ["-I./"]
