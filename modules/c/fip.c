@@ -43,6 +43,7 @@ const char *c_type_names[] = {
 };
 
 typedef struct {
+    bool needed;
     char source_file_path[512];
     int line_number;
     fip_msg_symbol_type_t type;
@@ -66,6 +67,7 @@ bool parse_fip_function_line( //
     // We need to extract: return_type="int", name="foo", parameters="int,float"
     fip_c_symbol_t symbol = {0};
     strcpy(symbol.source_file_path, file_path);
+    symbol.needed = false;
     symbol.line_number = line_num;
     symbol.type = FIP_SYM_FUNCTION;
     fip_sig_fn_t fn_sig = {0};
@@ -232,6 +234,7 @@ void handle_symbol_request(    //
             }
             if (sym_match) {
                 // We found the requested symbol
+                symbols[i].needed = true;
                 fip_clone_sig_fn(&sym_res->sig.fn, sym_fn);
                 break;
             }
