@@ -55,7 +55,7 @@
 /// @example This macro can be used like this:
 ///         int FIP_FN foo() { ... }
 ///         void FIP_FN bar();
-#define FIP_FN __attribute__((section(".fip_exports")))
+#define FIP_FN extern __attribute__((section(".fip_exports")))
 
 #else
 
@@ -491,6 +491,7 @@ typedef enum {
 const char *fip_module_enum_str[] = {"c"};
 
 typedef struct {
+    char compiler[128];
     uint32_t sources_len;
     char **sources;
     uint32_t compile_flags_len;
@@ -1414,6 +1415,17 @@ fip_slave_config_t fip_slave_load_config( //
     config.type = type;
     switch (type) {
         case C: {
+            // === COMPILER ===
+            toml_datum_t compiler_d = toml_seek(toml.toptab, "compiler");
+            if (compiler_d.type != TOML_STRING) {
+                fip_print(id, "Missing 'compiler' field");
+                return config;
+            }
+            const int compiler_len = compiler_d.u.str.len;
+            const char *compiler_ptr = compiler_d.u.str.ptr;
+            memcpy(config.u.c.compiler, compiler_ptr, compiler_len);
+
+            // === SOURCES ===
             toml_datum_t sources_d = toml_seek(toml.toptab, "sources");
             if (sources_d.type != TOML_ARRAY) {
                 fip_print(id, "Missing 'sources' field");
@@ -1438,6 +1450,7 @@ fip_slave_config_t fip_slave_load_config( //
                 config.u.c.sources[i][strlen] = '\0';
             }
 
+            // === COMPILE_FLAGS ===
             toml_datum_t compile_flags_d =
                 toml_seek(toml.toptab, "compile_flags");
             if (compile_flags_d.type != TOML_ARRAY) {
