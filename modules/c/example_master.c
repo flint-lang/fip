@@ -27,7 +27,7 @@ int main() {
     // Only start the fip-c IM if it's enabled in the fip.toml config file
     if (config_file.fip_c_enabled) {
         fip_print(0, "Starting the fip-c module...");
-        spawn_interop_module(&interop_modules, "./modules/c/fip-c");
+        spawn_interop_module(&interop_modules, ".fip/modules/fip-c");
     }
 
     // Give the fip-c IM time to connect
