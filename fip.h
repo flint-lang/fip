@@ -438,7 +438,7 @@ bool fip_master_symbol_request( //
 void fip_master_cleanup_socket(int socket_fd);
 
 /// @function `fip_master_load_config`
-/// @brief Loads the master config from the `.config/fip/fip.toml` file
+/// @brief Loads the master config from the `.fip/config/fip.toml` file
 ///
 /// @return `fip_master_config_t` The loaded configuration
 fip_master_config_t fip_master_load_config();
@@ -510,7 +510,7 @@ void fip_slave_send_message(   //
 void fip_slave_cleanup_socket(int socket_fd);
 
 /// @function `fip_slave_load_config`
-/// @brief Loads the master config from the `.config/fip/fip-X.toml` file where
+/// @brief Loads the master config from the `.fip/config/fip-X.toml` file where
 /// `X` is dependant on the type
 ///
 /// @param `id` The ID of the slave that tries to load the config
@@ -1175,7 +1175,7 @@ void fip_master_cleanup_socket(int socket_fd) {
 }
 
 fip_master_config_t fip_master_load_config() {
-    const char *file_path = ".config/fip/fip.toml";
+    const char *file_path = ".fip/config/fip.toml";
     FILE *fp = fopen(file_path, "r");
     fip_master_config_t config = {0};
     if (!fp) {
@@ -1284,7 +1284,7 @@ fip_slave_config_t fip_slave_load_config( //
     const uint32_t id,                    //
     const fip_module_enum_t type          //
 ) {
-    char file_path[32] = ".config/fip/fip-";
+    char file_path[32] = ".fip/config/fip-";
     const char *type_str = fip_module_enum_str[type];
     memcpy(file_path + 16, type_str, strlen(type_str));
     memcpy(file_path + 16 + strlen(type_str), ".toml", 5);
