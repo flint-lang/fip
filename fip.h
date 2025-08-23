@@ -366,21 +366,24 @@ extern char **environ;
 
 static fip_master_state_t master_state = {0};
 
-/// @function `spawn_interop_module`
+/// @function `fip_spawn_interop_module`
 /// @brief Creates a new interop module and adds it's process ID to the list of
 /// modules in the interop modules parameter
 ///
 /// @param `modules` A pointer to the structure containing all the module PIDs
 /// @param `binary` The interop module to start
 /// @return `bool` Whether the interop module process creation was successful
-bool spawn_interop_module(fip_interop_modules_t *modules, const char *module);
+bool fip_spawn_interop_module(      //
+    fip_interop_modules_t *modules, //
+    const char *module              //
+);
 
-/// @function `terminate_all_slaves`
+/// @function `fip_terminate_all_slaves`
 /// @brief Terminates all currently running slaves if they have not been
 /// terminated yet
 ///
 /// @param `modules` A pointer to the structure containing all the module PIDs
-void terminate_all_slaves(fip_interop_modules_t *modules);
+void fip_terminate_all_slaves(fip_interop_modules_t *modules);
 
 /// @function `fip_master_init_socket`
 /// @brief Initializes the socket which is used by all slaves to send messages
@@ -1026,7 +1029,8 @@ void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
 
 #ifdef FIP_MASTER
 
-bool spawn_interop_module(fip_interop_modules_t *modules, const char *module) {
+bool fip_spawn_interop_module(fip_interop_modules_t *modules,
+    const char *module) {
     char id[8] = {0};
     char _module[256] = {0};
     memcpy(_module, module, strlen(module));
@@ -1055,7 +1059,7 @@ bool spawn_interop_module(fip_interop_modules_t *modules, const char *module) {
     return true;
 }
 
-void terminate_all_slaves(fip_interop_modules_t *modules) {
+void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
     // We terminate all slaves as their workloads must have been finished by
     // now (the master has collected the results in the form of the .o
     // files)
