@@ -236,6 +236,7 @@ void handle_symbol_request(    //
                 // We found the requested symbol
                 symbols[i].needed = true;
                 fip_clone_sig_fn(&sym_res->sig.fn, sym_fn);
+                snprintf(sym_res->sig.fn.name, 128, "__fip_c_%s", sym_fn->name);
                 break;
             }
         }
