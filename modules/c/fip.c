@@ -25,6 +25,7 @@
 
 uint32_t ID;
 int SOCKET_FD;
+fip_slave_config_t CONFIG;
 
 const char *c_type_names[] = {
     "unsigned char",
@@ -262,17 +263,17 @@ int main(int argc, char *argv[]) {
     fip_print(ID, "Connected to master, waiting for messages...");
 
     // Parse the toml file for this module.
-    fip_slave_config_t config = fip_slave_load_config(ID, C);
+    CONFIG = fip_slave_load_config(ID, C);
     fip_print(ID, "Parsed fip-c.toml file");
-    assert(config.type == C);
+    assert(CONFIG.type == C);
 
     // Print all sources and all compile flags
-    for (uint32_t i = 0; i < config.u.c.compile_flags_len; i++) {
-        fip_print(ID, "compile_flags[%u]: %s", i, config.u.c.compile_flags[i]);
+    for (uint32_t i = 0; i < CONFIG.u.c.compile_flags_len; i++) {
+        fip_print(ID, "compile_flags[%u]: %s", i, CONFIG.u.c.compile_flags[i]);
     }
-    for (uint32_t i = 0; i < config.u.c.sources_len; i++) {
-        fip_print(ID, "source[%u]: %s", i, config.u.c.sources[i]);
-        scan_c_file_for_fip_exports(config.u.c.sources[i]);
+    for (uint32_t i = 0; i < CONFIG.u.c.sources_len; i++) {
+        fip_print(ID, "source[%u]: %s", i, CONFIG.u.c.sources[i]);
+        scan_c_file_for_fip_exports(CONFIG.u.c.sources[i]);
     }
 
     // Main loop - wait for messages from master
