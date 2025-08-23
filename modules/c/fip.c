@@ -268,18 +268,36 @@ bool compile_file(                   //
         return true;
     }
 
+    // Add all mangling definitions to prevent symbol collisions
+    char defines[1024] = {0};
+    strcat(defines, "-Dmain=__fip_c_main ");
+    for (int i = 0; i < symbol_count; i++) {
+        if (symbols[i].needed) {
+            char define_flag[64];
+            snprintf(define_flag, sizeof(define_flag), " -D%s=__fip_c_%s",
+                symbols[i].signature.fn.name, symbols[i].signature.fn.name);
+            strcat(defines, define_flag);
+        }
+    }
+
     // Build compile command with flags
-    char compile_cmd[1024] = "gcc -c ";
+    char compile_flags[1024] = {0};
     // Add all compile flags
     for (uint32_t i = 0; i < CONFIG.u.c.compile_flags_len; i++) {
-        strcat(compile_cmd, CONFIG.u.c.compile_flags[i]);
-        strcat(compile_cmd, " ");
+        strcat(compile_flags, CONFIG.u.c.compile_flags[i]);
+        if (i + 1 < CONFIG.u.c.compile_flags_len) {
+            strcat(compile_flags, " ");
+        }
     }
     // Add source and output
     char temp[256];
     char output_path[64] = {0};
     snprintf(output_path, sizeof(output_path), ".fip/cache/%.8s.o", hash);
     snprintf(temp, sizeof(temp), "%s -o %s", file_path, output_path);
+
+    char compile_cmd[1024] = {0};
+    snprintf(compile_cmd, sizeof(compile_cmd), "%s -c %s %s %s -o %s",
+        CONFIG.u.c.compiler, compile_flags, defines, file_path, output_path);
     strcat(compile_cmd, temp);
 
     fip_print(ID, "Executing: %s", compile_cmd);
