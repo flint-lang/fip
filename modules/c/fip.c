@@ -1,12 +1,11 @@
-#include <assert.h>
 #define NO_FIP_LIB
 #define FIP_SLAVE
 #define FIP_IMPLEMENTATION
 #include "fip.h"
 
+#include <assert.h>
 #include <stdlib.h>
-
-unsigned int ID;
+#include <time.h>
 
 /*
  * ==============================================
@@ -23,6 +22,9 @@ unsigned int ID;
  * language.
  * ==============================================
  */
+
+uint32_t ID;
+int SOCKET_FD;
 
 const char *c_type_names[] = {
     "unsigned char",
@@ -49,6 +51,7 @@ typedef struct {
 } fip_c_symbol_t;
 
 #define MAX_SYMBOLS 100
+#define MODULE_NAME "fip-c"
 
 fip_c_symbol_t symbols[MAX_SYMBOLS]; // Simple array for now
 int symbol_count = 0;
@@ -109,7 +112,7 @@ bool parse_fip_function_line( //
 
     // Extract all parameter types one by one
     start = paren_open + 1;
-    unsigned int type_len = 0;
+    uint32_t type_len = 0;
 
     // For now everything until the first space is the first parameter and then
     // everything until , or ) is considered a non-type
@@ -122,7 +125,7 @@ bool parse_fip_function_line( //
                 // First we decrement the type_len until we reach the first
                 // non-alphanumeric character
                 // Everything until there is the type
-                unsigned int comma_idx = type_len;
+                uint32_t comma_idx = type_len;
                 type_len--;
                 char c = *(start + type_len);
                 while (is_alpha_num(c)) {
@@ -172,7 +175,7 @@ bool scan_c_file_for_fip_exports(const char *file_path) {
         // Look for FIP_FN in the line
         if (strstr(line, "FIP_FN")) {
             if (parse_fip_function_line(line, file_path, line_num)) {
-                fip_print(ID, "  Found: '%s' at",
+                fip_print(ID, "Found: '%s' at",
                     symbols[symbol_count].signature.fn.name);
                 fip_print(                                                //
                     ID, "  LineNo: %u", symbols[symbol_count].line_number //
@@ -191,6 +194,52 @@ bool scan_c_file_for_fip_exports(const char *file_path) {
     return symbol_count > 0;
 }
 
+void handle_symbol_request(    //
+    char buffer[FIP_MSG_SIZE], //
+    const fip_msg_t *message   //
+) {
+    assert(message->u.sym_req.type == FIP_SYM_FUNCTION);
+    fip_print(ID, "Requested Function");
+    const fip_sig_fn_t *msg_fn = &message->u.sym_req.sig.fn;
+    fip_print_sig_fn(ID, msg_fn);
+    fip_msg_t response = {0};
+    response.type = FIP_MSG_SYMBOL_RESPONSE;
+    fip_msg_symbol_response_t *sym_res = &response.u.sym_res;
+    memcpy(sym_res->module_name, MODULE_NAME, sizeof(MODULE_NAME));
+    sym_res->type = FIP_SYM_FUNCTION;
+
+    bool sym_match = false;
+    for (uint32_t i = 0; i < symbol_count; i++) {
+        const fip_sig_fn_t *sym_fn = &symbols[i].signature.fn;
+        if (strcmp(sym_fn->name, msg_fn->name) == 0 //
+            && sym_fn->args_len == msg_fn->args_len //
+            && sym_fn->rets_len == msg_fn->rets_len //
+        ) {
+            sym_match = true;
+            // Now we need to check if the arg and ret types match
+            for (uint32_t j = 0; j < sym_fn->args_len; j++) {
+                if (sym_fn->args[j].type != msg_fn->args[i].type ||
+                    sym_fn->args[i].is_mutable != msg_fn->args[i].is_mutable) {
+                    sym_match = false;
+                }
+            }
+            for (uint32_t j = 0; j < sym_fn->rets_len; j++) {
+                if (sym_fn->rets[j].type != msg_fn->rets[i].type ||
+                    sym_fn->rets[i].is_mutable != msg_fn->rets[i].is_mutable) {
+                    sym_match = false;
+                }
+            }
+            if (sym_match) {
+                // We found the requested symbol
+                fip_clone_sig_fn(&sym_res->sig.fn, sym_fn);
+                break;
+            }
+        }
+    }
+    sym_res->found = sym_match;
+    fip_slave_send_message(ID, SOCKET_FD, buffer, &response);
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         printf("The `fip-c` Interop Module needs at least one argument\n");
@@ -199,14 +248,14 @@ int main(int argc, char *argv[]) {
     }
     char *id_str = argv[1];
     char *endptr;
-    ID = (unsigned int)strtoul(id_str, &endptr, 10);
+    ID = (uint32_t)strtoul(id_str, &endptr, 10);
     fip_print(ID, "starting...");
 
     char msg_buf[1024] = {0};
 
     // Connect to master's socket
-    int socket_fd = fip_slave_init_socket();
-    if (socket_fd == -1) {
+    SOCKET_FD = fip_slave_init_socket();
+    if (SOCKET_FD == -1) {
         fip_print(ID, "Failed to connect to master socket");
         return 1;
     }
@@ -218,10 +267,10 @@ int main(int argc, char *argv[]) {
     assert(config.type == C);
 
     // Print all sources and all compile flags
-    for (unsigned int i = 0; i < config.u.c.compile_flags_len; i++) {
+    for (uint32_t i = 0; i < config.u.c.compile_flags_len; i++) {
         fip_print(ID, "compile_flags[%u]: %s", i, config.u.c.compile_flags[i]);
     }
-    for (unsigned int i = 0; i < config.u.c.sources_len; i++) {
+    for (uint32_t i = 0; i < config.u.c.sources_len; i++) {
         fip_print(ID, "source[%u]: %s", i, config.u.c.sources[i]);
         scan_c_file_for_fip_exports(config.u.c.sources[i]);
     }
@@ -229,32 +278,62 @@ int main(int argc, char *argv[]) {
     // Main loop - wait for messages from master
     bool is_running = true;
     while (is_running) {
-        if (fip_slave_receive_message(socket_fd, msg_buf, FIP_MSG_SIZE)) {
+        struct timespec start_time;
+        clock_gettime(CLOCK_MONOTONIC, &start_time);
+
+        if (fip_slave_receive_message(SOCKET_FD, msg_buf)) {
             // Only print the first time we receive a message
             fip_print(ID, "Received message");
             fip_msg_t message = {0};
             fip_decode_msg(msg_buf, &message);
 
             switch (message.type) {
-                case FIP_MSG_KILL:
-                    fip_print(ID, "Received kill command, shutting down");
-                    is_running = false;
+                case FIP_MSG_UNKNOWN:
+                    fip_print(ID, "Recieved unknown message");
+                    break;
+                case FIP_MSG_CONNECT_REQUEST:
+                    fip_print(ID, "Connect Request");
                     break;
                 case FIP_MSG_SYMBOL_REQUEST:
-                    assert(message.u.sym_req.type == FIP_SYM_FUNCTION);
-                    fip_print_sig_fn(ID, &message.u.sym_req.sig.fn);
+                    fip_print(ID, "Symbol Request");
+                    // On a symbol request we check if we have this symbol in
+                    // one of our source files
+                    handle_symbol_request(msg_buf, &message);
                     break;
-                default:
-                    fip_print(ID, "Recieved unknown message");
+                case FIP_MSG_SYMBOL_RESPONSE:
+                    // The slave should not recieve a message it sends
+                    assert(false);
+                    break;
+                case FIP_MSG_COMPILE_REQUEST:
+                    fip_print(ID, "Compile Request");
+                    break;
+                case FIP_MSG_OBJECT_RESPONSE:
+                    // The slave should not recieve a message it sends
+                    assert(false);
+                    break;
+                case FIP_MSG_KILL:
+                    fip_print(ID, "Kill Command, shutting down");
+                    is_running = false;
                     break;
             }
         }
 
-        // Small delay to prevent busy waiting
-        usleep(50000); // 50ms
+        // Calculate elapsed time and adjust sleep to maintain 1ms intervals
+        struct timespec end_time;
+        clock_gettime(CLOCK_MONOTONIC, &end_time);
+        long elapsed_ns = (end_time.tv_sec - start_time.tv_sec) * 1000000000 +
+            (end_time.tv_nsec - start_time.tv_nsec);
+
+        long remaining_ns = FIP_SLAVE_DELAY - elapsed_ns;
+        if (remaining_ns > 0) {
+            nanosleep(                                                    //
+                &(struct timespec){.tv_sec = 0, .tv_nsec = remaining_ns}, //
+                NULL                                                      //
+            );
+        }
     }
 
-    fip_slave_cleanup_socket(socket_fd);
+    fip_slave_cleanup_socket(SOCKET_FD);
     fip_print(ID, "ending...");
     return 0;
 }
