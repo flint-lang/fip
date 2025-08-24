@@ -184,6 +184,7 @@ typedef struct {
 /// @typedef `fip_msg_connect_request_t`
 /// @breif Struct representing all information from a connection request
 typedef struct {
+    bool setup_ok;
     struct {
         uint8_t major;
         uint8_t minor;
@@ -654,6 +655,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
         case FIP_MSG_CONNECT_REQUEST:
             // The connect request just puts the version info followed by the
             // module name into the buffer and is done
+            buffer[idx++] = (bool)message->u.con_req.setup_ok;
             buffer[idx++] = message->u.con_req.version.major;
             buffer[idx++] = message->u.con_req.version.minor;
             buffer[idx++] = message->u.con_req.version.patch;
@@ -769,6 +771,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
         case FIP_MSG_CONNECT_REQUEST:
             // The connect request just puts the versions into the buffer one by
             // one and is done
+            message->u.con_req.setup_ok = (bool)buffer[idx++];
             message->u.con_req.version.major = buffer[idx++];
             message->u.con_req.version.minor = buffer[idx++];
             message->u.con_req.version.patch = buffer[idx++];
