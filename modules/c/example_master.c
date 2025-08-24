@@ -27,10 +27,13 @@ int main() {
     // Create a single message which will be re-used for all messages
     fip_msg_t msg = {0};
 
-    // Only start the fip-c IM if it's enabled in the fip.toml config file
-    if (config_file.fip_c_enabled) {
-        fip_print(0, "Starting the fip-c module...");
-        fip_spawn_interop_module(&interop_modules, ".fip/modules/fip-c");
+    // Start all enabled interop modules
+    for (uint8_t i = 0; i < config_file.enabled_count; i++) {
+        const char *mod = config_file.enabled_modules[i];
+        fip_print(0, "Starting the %s module...", mod);
+        char module_path[13 + FIP_MAX_MODULE_NAME_LEN] = {0};
+        snprintf(module_path, sizeof(module_path), ".fip/modules/%s", mod);
+        fip_spawn_interop_module(&interop_modules, module_path);
     }
 
     // Give the fip-c IM time to connect

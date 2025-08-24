@@ -95,6 +95,7 @@ const char *FIP_SOCKET_PATH = "/tmp/fip_socket";
 #define DEFAULT "\033[0m"
 #define GREY "\033[90m"
 #define FIP_TYPE_COUNT 12
+#define FIP_MAX_MODULE_NAME_LEN 32
 
 /// @typedef `fip_type_enum_t`
 /// @brief Enum of all possible FIP types
@@ -349,6 +350,8 @@ void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src);
 
 #ifdef FIP_MASTER
 
+#define FIP_MAX_ENABLED_MODULES 16
+
 typedef struct {
     uint8_t active_count;
     pid_t pids[FIP_MAX_SLAVES];
@@ -363,7 +366,8 @@ typedef struct {
 } fip_master_state_t;
 
 typedef struct {
-    bool fip_c_enabled;
+    char enabled_modules[FIP_MAX_ENABLED_MODULES][FIP_MAX_MODULE_NAME_LEN];
+    uint8_t enabled_count;
 } fip_master_config_t;
 
 extern char **environ;
@@ -491,27 +495,6 @@ fip_master_config_t fip_master_load_config();
  * ===================
  */
 
-typedef enum {
-    C,
-} fip_module_enum_t;
-
-const char *fip_module_enum_str[] = {"c"};
-
-typedef struct {
-    char compiler[128];
-    uint32_t sources_len;
-    char **sources;
-    uint32_t compile_flags_len;
-    char **compile_flags;
-} fip_module_c_config_t;
-
-typedef struct {
-    fip_module_enum_t type;
-    union {
-        fip_module_c_config_t c;
-    } u;
-} fip_slave_config_t;
-
 /// @function `fip_slave_init_socket`
 /// @brief Tries to connect to the master's socket and returns the file
 /// descirptor of the master socket
@@ -549,15 +532,17 @@ void fip_slave_send_message(   //
 void fip_slave_cleanup_socket(int socket_fd);
 
 /// @function `fip_slave_load_config`
-/// @brief Loads the master config from the `.fip/config/fip-X.toml` file where
-/// `X` is dependant on the type
+/// @brief Loads the master config from the `.fip/config/X.toml` where `X` is
+/// the name of the module (for example `fip-c`)
 ///
 /// @param `id` The ID of the slave that tries to load the config
-/// @param `type` The type of the fip module's configuration to load
-/// @return `fip_master_config_t` The loaded configuration
-fip_slave_config_t fip_slave_load_config( //
-    const uint32_t id,                    //
-    const fip_module_enum_t type          //
+/// @param `module_name` The name of the module to load
+/// @return `toml_result_t` The loaded configuration toml file. Interpreting the
+/// content of this file is the responsibility of each interop module itself,
+/// the FIP protocol itself stays purely language-independant
+toml_result_t fip_slave_load_config( //
+    const uint32_t id,               //
+    const char *module_name          //
 );
 
 #endif // End of #ifdef FIP_SLAVE
@@ -1312,15 +1297,50 @@ fip_master_config_t fip_master_load_config() {
         return config;
     }
 
-    // Extract value(s)
-    toml_datum_t fip_c_enable = toml_seek(toml.toptab, "fip-c.enable");
-
-    if (fip_c_enable.type != TOML_BOOLEAN) {
-        fip_print(0, "Missing fip-c.enable field");
-        return config;
+    // The toptab is a table, so it not being a table should have been a parse
+    // error
+    if (toml.toptab.type != TOML_TABLE) {
+        assert(false);
     }
-    config.fip_c_enabled = fip_c_enable.u.boolean;
+    // Iterate through its keys
+    for (int32_t i = 0; i < toml.toptab.u.tab.size; i++) {
+        const char *section_name = toml.toptab.u.tab.key[i];
+
+        // Check if section starts with "fip-"
+        if (strncmp(section_name, "fip-", 4) != 0) {
+            continue;
+        }
+        // Get the section (it's a table)
+        toml_datum_t section = toml.toptab.u.tab.value[i];
+        if (section.type != TOML_TABLE) {
+            continue;
+        }
+        // Look for "enable" key in this section
+        toml_datum_t enabled = toml_get(section, "enable");
+        if (enabled.type != TOML_BOOLEAN || !enabled.u.boolean) {
+            fip_print(0, "Module %s is disabled or missing enable field",
+                section_name);
+            continue;
+        }
+
+        // Check whether we have reached the maximum module count
+        if (config.enabled_count >= FIP_MAX_ENABLED_MODULES) {
+            fip_print(0, "There are too many active modules (%d)!",
+                config.enabled_count);
+            continue;
+        }
+
+        // Add to enabled modules list
+        strncpy(config.enabled_modules[config.enabled_count], section_name,
+            FIP_MAX_MODULE_NAME_LEN - 1);
+        config.enabled_modules[config.enabled_count]
+                              [FIP_MAX_MODULE_NAME_LEN - 1] = '\0';
+        config.enabled_count++;
+        fip_print(0, "Enabled module: %s", section_name);
+    }
+
     toml_free(toml);
+    fip_print(0, "Found %d enabled modules", config.enabled_count);
     return config;
 }
 
@@ -1403,105 +1423,29 @@ void fip_slave_cleanup_socket(int socket_fd) {
     }
 }
 
-fip_slave_config_t fip_slave_load_config( //
-    const uint32_t id,                    //
-    const fip_module_enum_t type          //
+toml_result_t fip_slave_load_config( //
+    const uint32_t id,               //
+    const char *module_name          //
 ) {
-    char file_path[32] = ".fip/config/fip-";
-    const char *type_str = fip_module_enum_str[type];
-    memcpy(file_path + 16, type_str, strlen(type_str));
-    memcpy(file_path + 16 + strlen(type_str), ".toml", 5);
-
+    char file_path[32] = {0};
+    snprintf(file_path, 32, ".fip/config/%s.toml", module_name);
+    toml_result_t toml = {0};
+    toml.ok = false;
     FILE *fp = fopen(file_path, "r");
-#ifdef __cplusplus
-    fip_slave_config_t config = fip_slave_config_t{};
-#else
-    fip_slave_config_t config = {0};
-#endif
     if (!fp) {
-        fip_print(0, "Config file not found: %s", file_path);
-        return config;
+        fip_print(id, "Config file not found: %s", file_path);
+        return toml;
     }
-    toml_result_t toml = toml_parse_file(fp);
+    toml = toml_parse_file(fp);
     fclose(fp);
     // Check for parse error
     if (!toml.ok) {
-        fip_print(id, "Failed to parse fip-%s.toml file: %s", type_str,
+        fip_print(id, "Failed to parse %s.toml file: %s", module_name,
             toml.errmsg);
-        return config;
+        return toml;
     }
 
-    // Extract value(s)
-    config.type = type;
-    switch (type) {
-        case C: {
-            // === COMPILER ===
-            toml_datum_t compiler_d = toml_seek(toml.toptab, "compiler");
-            if (compiler_d.type != TOML_STRING) {
-                fip_print(id, "Missing 'compiler' field");
-                return config;
-            }
-            const int compiler_len = compiler_d.u.str.len;
-            const char *compiler_ptr = compiler_d.u.str.ptr;
-            memcpy(config.u.c.compiler, compiler_ptr, compiler_len);
-
-            // === SOURCES ===
-            toml_datum_t sources_d = toml_seek(toml.toptab, "sources");
-            if (sources_d.type != TOML_ARRAY) {
-                fip_print(id, "Missing 'sources' field");
-                return config;
-            }
-            int32_t arr_len = sources_d.u.arr.size;
-            toml_datum_t *sources_elems_d = sources_d.u.arr.elem;
-            config.u.c.sources = (char **)malloc(sizeof(char *) * arr_len);
-            config.u.c.sources_len = arr_len;
-            for (int32_t i = 0; i < arr_len; i++) {
-                if (sources_elems_d[i].type != TOML_STRING) {
-                    fip_print(id, "'sources' does contain a non-string value");
-                    return config;
-                }
-                int32_t strlen = sources_elems_d[i].u.str.len;
-                config.u.c.sources[i] = (char *)malloc(strlen + 1);
-                memcpy(                           //
-                    config.u.c.sources[i],        //
-                    sources_elems_d[i].u.str.ptr, //
-                    strlen                        //
-                );
-                config.u.c.sources[i][strlen] = '\0';
-            }
-
-            // === COMPILE_FLAGS ===
-            toml_datum_t compile_flags_d =
-                toml_seek(toml.toptab, "compile_flags");
-            if (compile_flags_d.type != TOML_ARRAY) {
-                fip_print(id, "Missing 'compile_flags' field");
-                return config;
-            }
-            arr_len = compile_flags_d.u.arr.size;
-            toml_datum_t *compile_flags_elems_d = compile_flags_d.u.arr.elem;
-            config.u.c.compile_flags =
-                (char **)malloc(sizeof(char *) * arr_len);
-            config.u.c.compile_flags_len = arr_len;
-            for (int32_t i = 0; i < arr_len; i++) {
-                if (compile_flags_elems_d[i].type != TOML_STRING) {
-                    fip_print(id,
-                        "'compile_flags' does contain a non-string value");
-                    return config;
-                }
-                int32_t strlen = compile_flags_elems_d[i].u.str.len;
-                config.u.c.compile_flags[i] = (char *)malloc(strlen + 1);
-                memcpy(                                 //
-                    config.u.c.compile_flags[i],        //
-                    compile_flags_elems_d[i].u.str.ptr, //
-                    strlen                              //
-                );
-                config.u.c.compile_flags[i][strlen] = '\0';
-            }
-            break;
-        }
-    }
-    toml_free(toml);
-    return config;
+    return toml;
 }
 
 #endif // End of #ifdef FIP_SLAVE
