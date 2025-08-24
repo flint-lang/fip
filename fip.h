@@ -81,7 +81,7 @@
 #include <time.h>
 #include <unistd.h> // close(), read(), write() system calls
 
-const char *FIP_SOCKET_PATH = "/tmp/fip_socket";
+extern const char *FIP_SOCKET_PATH;
 #define FIP_MAX_SLAVES 64
 #define FIP_MSG_SIZE 1024
 #define FIP_SLAVE_DELAY 1000000 // in nanoseconds
@@ -142,15 +142,7 @@ typedef enum : uint8_t {
 /// @var `fip_msg_type_str`
 /// @brief A simple array containing all the string names of the possible
 /// message types
-const char *fip_msg_type_str[] = {
-    "FIP_MSG_UNKNOWN",
-    "FIP_MSG_CONNECT_REQUEST",
-    "FIP_MSG_SYMBOL_REQUEST",
-    "FIP_MSG_SYMBOL_RESPONSE",
-    "FIP_MSG_COMPILE_REQUEST",
-    "FIP_MSG_OBJECT_RESPONSE",
-    "FIP_MSG_KILL",
-};
+extern const char *fip_msg_type_str[];
 
 /*
  * =================
@@ -389,8 +381,7 @@ typedef struct {
 } fip_master_config_t;
 
 extern char **environ;
-
-static fip_master_state_t master_state = {0};
+extern fip_master_state_t master_state;
 
 /// @function `fip_spawn_interop_module`
 /// @brief Creates a new interop module and adds it's process ID to the list of
@@ -563,6 +554,18 @@ toml_result_t fip_slave_load_config( //
 #endif // End of #ifdef FIP_SLAVE
 
 #ifdef FIP_IMPLEMENTATION
+
+const char *FIP_SOCKET_PATH = "/tmp/fip_socket";
+
+const char *fip_msg_type_str[] = {
+    "FIP_MSG_UNKNOWN",
+    "FIP_MSG_CONNECT_REQUEST",
+    "FIP_MSG_SYMBOL_REQUEST",
+    "FIP_MSG_SYMBOL_RESPONSE",
+    "FIP_MSG_COMPILE_REQUEST",
+    "FIP_MSG_OBJECT_RESPONSE",
+    "FIP_MSG_KILL",
+};
 
 /// @var `fip_type_names`
 /// @brief A small array where the value at each enum index is the name of the
@@ -1052,6 +1055,8 @@ void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
 }
 
 #ifdef FIP_MASTER
+
+fip_master_state_t master_state = {0};
 
 bool fip_spawn_interop_module(fip_interop_modules_t *modules,
     const char *module) {
