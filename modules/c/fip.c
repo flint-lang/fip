@@ -230,11 +230,11 @@ bool parse_fip_function_line( //
     return true;
 }
 
-bool scan_c_file_for_fip_exports(const char *file_path) {
+void scan_c_file_for_fip_exports(const char *file_path) {
     FILE *file = fopen(file_path, "r");
     if (!file) {
         fip_print(ID, "Could not open %s", file_path);
-        return false;
+        return;
     }
 
     char line[1024];
@@ -264,7 +264,6 @@ bool scan_c_file_for_fip_exports(const char *file_path) {
 
     fclose(file);
     fip_print(ID, "Found %d FIP functions in %s", symbol_count, file_path);
-    return symbol_count > 0;
 }
 
 void handle_symbol_request(    //
