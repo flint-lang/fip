@@ -216,13 +216,17 @@ typedef struct {
     char paths[FIP_PATHS_SIZE];
 } fip_msg_object_response_t;
 
+/// @typedef `fip_msg_kill_reason_t`
+/// @brief The reason enum for the kill command
+typedef enum : uint8_t {
+    FIP_KILL_FINISH = 0,
+    FIP_KILL_VERSION_MISMATCH,
+} fip_msg_kill_reason_t;
+
 /// @typedef `fip_msg_kill_t`
 /// @brief Struct representing the kill message
 typedef struct {
-    enum : uint8_t {
-        FIP_KILL_FINISH = 0,
-        FIP_KILL_VERSION_MISMATCH,
-    } reason;
+    fip_msg_kill_reason_t reason;
 } fip_msg_kill_t;
 
 /// @typedef `fip_msg_t`
@@ -605,7 +609,7 @@ void fip_print(uint32_t id, const char *format, ...) {
     printf("\n");
 }
 
-void fip_print_msg(uint32_t id, const fip_msg_t *message) {
+void fip_print_msg(uint32_t id, [[maybe_unused]] const fip_msg_t *message) {
     fip_print(id, "TODO: fip_print_msg");
 }
 
@@ -723,20 +727,24 @@ void fip_decode_sig_fn(              //
     // because which function has more than 256 parameters or return types?
     sig->args_len = buffer[(*idx)++];
     if (sig->args_len > 0) {
-        sig->args = malloc(sizeof(fip_sig_type_t) * sig->args_len);
+        sig->args = (fip_sig_type_t *)malloc(      //
+            sizeof(fip_sig_type_t) * sig->args_len //
+        );
         for (uint8_t i = 0; i < sig->args_len; i++) {
             sig->args[i].is_mutable = buffer[(*idx)++];
-            sig->args[i].type = buffer[(*idx)++];
+            sig->args[i].type = (fip_type_enum_t)buffer[(*idx)++];
         }
     } else {
         sig->args = NULL;
     }
     sig->rets_len = buffer[(*idx)++];
     if (sig->rets_len > 0) {
-        sig->rets = malloc(sizeof(fip_sig_type_t) * sig->rets_len);
+        sig->rets = (fip_sig_type_t *)malloc(      //
+            sizeof(fip_sig_type_t) * sig->rets_len //
+        );
         for (uint8_t i = 0; i < sig->rets_len; i++) {
             sig->rets[i].is_mutable = buffer[(*idx)++];
-            sig->rets[i].type = buffer[(*idx)++];
+            sig->rets[i].type = (fip_type_enum_t)buffer[(*idx)++];
         }
     } else {
         sig->rets = NULL;
@@ -746,7 +754,7 @@ void fip_decode_sig_fn(              //
 void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
     // The first character in the buffer is the message type
     int idx = 0;
-    message->type = buffer[idx++];
+    message->type = (fip_msg_type_t)buffer[idx++];
     switch (message->type) {
         case FIP_MSG_UNKNOWN:
             // Recieved unknown or faulty message
@@ -759,7 +767,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             message->u.con_req.version.patch = buffer[idx++];
             break;
         case FIP_MSG_SYMBOL_REQUEST:
-            message->u.sym_req.type = buffer[idx++];
+            message->u.sym_req.type = (fip_msg_symbol_type_t)buffer[idx++];
             switch (message->u.sym_req.type) {
                 case FIP_SYM_UNKNOWN:
                     break;
@@ -773,10 +781,10 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
         case FIP_MSG_SYMBOL_RESPONSE:
             // We place all elements into the buffer one by one until we come to
             // the union
-            message->u.sym_res.found = buffer[idx++];
+            message->u.sym_res.found = (bool)buffer[idx++];
             memcpy(message->u.sym_res.module_name, buffer + idx, 16);
             idx += 16;
-            message->u.sym_res.type = buffer[idx++];
+            message->u.sym_res.type = (fip_msg_symbol_type_t)buffer[idx++];
             switch (message->u.sym_res.type) {
                 case FIP_SYM_UNKNOWN:
                     break;
@@ -803,14 +811,14 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
         case FIP_MSG_OBJECT_RESPONSE:
             // The sizes of the buffers are known so we can put them into the
             // buffer directly
-            message->u.obj_res.has_obj = buffer[idx++];
+            message->u.obj_res.has_obj = (bool)buffer[idx++];
             memcpy(message->u.obj_res.module_name, buffer + idx, 16);
             idx += 16;
             memcpy(message->u.obj_res.paths, buffer + idx, FIP_PATHS_SIZE);
             break;
         case FIP_MSG_KILL:
             // The kill message just adds why the kill happens
-            message->u.kill.reason = buffer[idx++];
+            message->u.kill.reason = (fip_msg_kill_reason_t)buffer[idx++];
             break;
     }
 }
@@ -947,7 +955,7 @@ void fip_parse_sig_type(  //
     uint32_t arg_id = *sig_len;
     (*sig_len)++;
     uint32_t new_size = sizeof(fip_sig_type_t) * *sig_len;
-    *sig = realloc(*sig, new_size);
+    *sig = (fip_sig_type_t *)realloc(*sig, new_size);
     (*sig)[arg_id].is_mutable = false;
     (*sig)[arg_id].type = type;
 }
@@ -974,7 +982,7 @@ bool fip_parse_type_string(       //
         c = *(type_str + start_idx);
     }
     strncpy(arg_str, type_str + start_idx, end_idx - start_idx);
-    for (char i = 0; i < FIP_TYPE_COUNT; i++) {
+    for (uint8_t i = 0; i < FIP_TYPE_COUNT; i++) {
         if (strcmp(arg_str, type_str_table[i]) == 0) {
             fip_parse_sig_type(sig, sig_len, (fip_type_enum_t)i);
             return true;
@@ -988,24 +996,23 @@ bool fip_parse_type_string(       //
 void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig) {
     fip_print(id, "  Function Signature:");
     fip_print(id, "    name: %s", sig->name);
-    char *mut_text = NULL;
     for (uint32_t i = 0; i < sig->args_len; i++) {
         if (sig->args[i].is_mutable) {
-            mut_text = "mut";
+            fip_print(id, "    arg[%u]: mut %s", i,
+                fip_type_names[sig->args[i].type]);
         } else {
-            mut_text = "const";
+            fip_print(id, "    arg[%u]: const %s", i,
+                fip_type_names[sig->args[i].type]);
         }
-        fip_print(id, "    arg[%u]: %s %s", i, mut_text,
-            fip_type_names[sig->args[i].type]);
     }
     for (uint32_t i = 0; i < sig->rets_len; i++) {
         if (sig->rets[i].is_mutable) {
-            mut_text = "mut";
+            fip_print(id, "    ret[%u]: mut %s", i,
+                fip_type_names[sig->rets[i].type]);
         } else {
-            mut_text = "const";
+            fip_print(id, "    ret[%u]: const %s", i,
+                fip_type_names[sig->rets[i].type]);
         }
-        fip_print(id, "    ret[%u]: %s %s", i, mut_text,
-            fip_type_names[sig->rets[i].type]);
     }
 }
 
@@ -1013,14 +1020,18 @@ void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
     memcpy(dest->name, src->name, 128);
     dest->args_len = src->args_len;
     if (src->args_len > 0) {
-        dest->args = malloc(sizeof(fip_sig_type_t) * src->args_len);
+        dest->args = (fip_sig_type_t *)malloc(     //
+            sizeof(fip_sig_type_t) * src->args_len //
+        );
         for (uint8_t i = 0; i < src->args_len; i++) {
             dest->args[i] = src->args[i];
         }
     }
     dest->rets_len = src->rets_len;
     if (src->rets_len > 0) {
-        dest->rets = malloc(sizeof(fip_sig_type_t) * src->rets_len);
+        dest->rets = (fip_sig_type_t *)malloc(     //
+            sizeof(fip_sig_type_t) * src->rets_len //
+        );
         for (uint8_t i = 0; i < src->rets_len; i++) {
             dest->rets[i] = src->rets[i];
         }
@@ -1334,7 +1345,8 @@ int fip_slave_init_socket() {
             return socket_fd; // Success
         }
         // Wait 100ms before retry
-        nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 100000000}, NULL);
+        struct timespec time = {.tv_sec = 0, .tv_nsec = 100000000};
+        nanosleep(&time, NULL);
     }
 
     close(socket_fd);
@@ -1401,7 +1413,11 @@ fip_slave_config_t fip_slave_load_config( //
     memcpy(file_path + 16 + strlen(type_str), ".toml", 5);
 
     FILE *fp = fopen(file_path, "r");
+#ifdef __cplusplus
+    fip_slave_config_t config = fip_slave_config_t{};
+#else
     fip_slave_config_t config = {0};
+#endif
     if (!fp) {
         fip_print(0, "Config file not found: %s", file_path);
         return config;
@@ -1445,7 +1461,7 @@ fip_slave_config_t fip_slave_load_config( //
                     return config;
                 }
                 int32_t strlen = sources_elems_d[i].u.str.len;
-                config.u.c.sources[i] = malloc(strlen + 1);
+                config.u.c.sources[i] = (char *)malloc(strlen + 1);
                 memcpy(                           //
                     config.u.c.sources[i],        //
                     sources_elems_d[i].u.str.ptr, //
@@ -1473,7 +1489,7 @@ fip_slave_config_t fip_slave_load_config( //
                     return config;
                 }
                 int32_t strlen = compile_flags_elems_d[i].u.str.len;
-                config.u.c.compile_flags[i] = malloc(strlen + 1);
+                config.u.c.compile_flags[i] = (char *)malloc(strlen + 1);
                 memcpy(                                 //
                     config.u.c.compile_flags[i],        //
                     compile_flags_elems_d[i].u.str.ptr, //
