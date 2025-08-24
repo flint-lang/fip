@@ -23,10 +23,6 @@
  * ==============================================
  */
 
-uint32_t ID;
-int SOCKET_FD;
-fip_slave_config_t CONFIG;
-
 const char *c_type_names[] = {
     "unsigned char",
     "unsigned short",
@@ -52,11 +48,85 @@ typedef struct {
     } signature;
 } fip_c_symbol_t;
 
+typedef struct {
+    char compiler[128];
+    uint32_t sources_len;
+    char **sources;
+    uint32_t compile_flags_len;
+    char **compile_flags;
+} fip_module_config_t;
+
 #define MAX_SYMBOLS 100
 #define MODULE_NAME "fip-c"
 
 fip_c_symbol_t symbols[MAX_SYMBOLS]; // Simple array for now
 uint32_t symbol_count = 0;
+uint32_t ID;
+int SOCKET_FD;
+fip_module_config_t CONFIG;
+
+bool parse_toml_file(toml_result_t toml) {
+    // === COMPILER ===
+    toml_datum_t compiler_d = toml_seek(toml.toptab, "compiler");
+    if (compiler_d.type != TOML_STRING) {
+        fip_print(ID, "Missing 'compiler' field");
+        return false;
+    }
+    const int compiler_len = compiler_d.u.str.len;
+    const char *compiler_ptr = compiler_d.u.str.ptr;
+    memcpy(CONFIG.compiler, compiler_ptr, compiler_len);
+
+    // === SOURCES ===
+    toml_datum_t sources_d = toml_seek(toml.toptab, "sources");
+    if (sources_d.type != TOML_ARRAY) {
+        fip_print(ID, "Missing 'sources' field");
+        return false;
+    }
+    int32_t arr_len = sources_d.u.arr.size;
+    toml_datum_t *sources_elems_d = sources_d.u.arr.elem;
+    CONFIG.sources = (char **)malloc(sizeof(char *) * arr_len);
+    CONFIG.sources_len = arr_len;
+    for (int32_t i = 0; i < arr_len; i++) {
+        if (sources_elems_d[i].type != TOML_STRING) {
+            fip_print(ID, "'sources' does contain a non-string value");
+            return false;
+        }
+        int32_t strlen = sources_elems_d[i].u.str.len;
+        CONFIG.sources[i] = (char *)malloc(strlen + 1);
+        memcpy(                           //
+            CONFIG.sources[i],            //
+            sources_elems_d[i].u.str.ptr, //
+            strlen                        //
+        );
+        CONFIG.sources[i][strlen] = '\0';
+    }
+
+    // === COMPILE_FLAGS ===
+    toml_datum_t compile_flags_d = toml_seek(toml.toptab, "compile_flags");
+    if (compile_flags_d.type != TOML_ARRAY) {
+        fip_print(ID, "Missing 'compile_flags' field");
+        return false;
+    }
+    arr_len = compile_flags_d.u.arr.size;
+    toml_datum_t *compile_flags_elems_d = compile_flags_d.u.arr.elem;
+    CONFIG.compile_flags = (char **)malloc(sizeof(char *) * arr_len);
+    CONFIG.compile_flags_len = arr_len;
+    for (int32_t i = 0; i < arr_len; i++) {
+        if (compile_flags_elems_d[i].type != TOML_STRING) {
+            fip_print(ID, "'compile_flags' does contain a non-string value");
+            return false;
+        }
+        int32_t strlen = compile_flags_elems_d[i].u.str.len;
+        CONFIG.compile_flags[i] = (char *)malloc(strlen + 1);
+        memcpy(                                 //
+            CONFIG.compile_flags[i],            //
+            compile_flags_elems_d[i].u.str.ptr, //
+            strlen                              //
+        );
+        CONFIG.compile_flags[i][strlen] = '\0';
+    }
+    return true;
+}
 
 bool parse_fip_function_line( //
     const char *line,         //
@@ -285,9 +355,9 @@ bool compile_file(                                    //
     // Build compile command with flags
     char compile_flags[1024] = {0};
     // Add all compile flags
-    for (uint32_t i = 0; i < CONFIG.u.c.compile_flags_len; i++) {
-        strcat(compile_flags, CONFIG.u.c.compile_flags[i]);
-        if (i + 1 < CONFIG.u.c.compile_flags_len) {
+    for (uint32_t i = 0; i < CONFIG.compile_flags_len; i++) {
+        strcat(compile_flags, CONFIG.compile_flags[i]);
+        if (i + 1 < CONFIG.compile_flags_len) {
             strcat(compile_flags, " ");
         }
     }
@@ -299,7 +369,7 @@ bool compile_file(                                    //
 
     char compile_cmd[1024] = {0};
     snprintf(compile_cmd, sizeof(compile_cmd), "%s -c %s %s %s -o %s",
-        CONFIG.u.c.compiler, compile_flags, defines, file_path, output_path);
+        CONFIG.compiler, compile_flags, defines, file_path, output_path);
     strcat(compile_cmd, temp);
 
     fip_print(ID, "Executing: %s", compile_cmd);
@@ -360,7 +430,8 @@ void handle_compile_request(   //
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        printf("The `fip-c` Interop Module needs at least one argument\n");
+        printf("The '%s' Interop Module needs at least one argument\n",
+            MODULE_NAME);
         printf("The argument must be the ID of the Interop Module\n");
         return 1;
     }
@@ -380,9 +451,19 @@ int main(int argc, char *argv[]) {
     fip_print(ID, "Connected to master, waiting for messages...");
 
     // Parse the toml file for this module.
-    CONFIG = fip_slave_load_config(ID, C);
-    fip_print(ID, "Parsed fip-c.toml file");
-    assert(CONFIG.type == C);
+    toml_result_t toml = fip_slave_load_config(ID, MODULE_NAME);
+    if (!parse_toml_file(toml)) {
+        fip_print(ID, "The %s.toml file could not be parsed", MODULE_NAME);
+        toml_free(toml);
+        goto kill;
+    }
+    toml_free(toml);
+    if (CONFIG.sources_len == 0) {
+        fip_print(ID, "The '%s' module does not have any sources declared",
+            MODULE_NAME);
+        goto kill;
+    }
+    fip_print(ID, "Parsed %s.toml file", MODULE_NAME);
 
     // Print all sources and all compile flags
     for (uint32_t i = 0; i < CONFIG.u.c.compile_flags_len; i++) {
