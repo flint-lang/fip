@@ -56,7 +56,7 @@ typedef struct {
 #define MODULE_NAME "fip-c"
 
 fip_c_symbol_t symbols[MAX_SYMBOLS]; // Simple array for now
-int symbol_count = 0;
+uint32_t symbol_count = 0;
 
 bool parse_fip_function_line( //
     const char *line,         //
@@ -245,11 +245,13 @@ void handle_symbol_request(    //
     fip_slave_send_message(ID, SOCKET_FD, buffer, &response);
 }
 
-bool compile_file(                   //
-    char paths[FIP_PATHS_SIZE],      //
-    const char *file_path,           //
-    const fip_msg_t *compile_message //
+bool compile_file(                                    //
+    char paths[FIP_PATHS_SIZE],                       //
+    const char *file_path,                            //
+    [[maybe_unused]] const fip_msg_t *compile_message //
 ) {
+    // TODO: Use the target information from the compile_message
+    //
     // First we need to calculate a hash of the source file's path and then the
     // compiled object will be stored in the `.fip/cache/` directory as
     // `HASH.o`. This way each "file path" is not the absolute path to the
@@ -271,7 +273,7 @@ bool compile_file(                   //
     // Add all mangling definitions to prevent symbol collisions
     char defines[1024] = {0};
     strcat(defines, "-Dmain=__fip_c_main ");
-    for (int i = 0; i < symbol_count; i++) {
+    for (uint32_t i = 0; i < symbol_count; i++) {
         if (symbols[i].needed) {
             char define_flag[64];
             snprintf(define_flag, sizeof(define_flag), " -D%s=__fip_c_%s",
