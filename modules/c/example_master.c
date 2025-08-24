@@ -47,7 +47,8 @@ int main() {
         &master_state.response_count, //
         FIP_MSG_CONNECT_REQUEST       //
     );
-    // Check if each interop module has the correct version
+    // Check if each interop module has the correct version and whether it's
+    // setup was ok
     for (uint8_t i = 0; i < master_state.response_count; i++) {
         const fip_msg_t *response = &master_state.responses[i];
         const fip_msg_connect_request_t *req = &response->u.con_req;
@@ -61,6 +62,12 @@ int main() {
             fip_print(0, "  Expected 'v%d.%d.%d' but got 'v%d.%d.%d'",
                 FIP_MAJOR, FIP_MINOR, FIP_PATCH, req->version.major,
                 req->version.minor, req->version.patch);
+            goto kill;
+        }
+        if (!req->setup_ok) {
+            fip_print(0, "Module '%s' failed it's setup", req->module_name);
+            close(master_state.client_fds[i]);
+            master_state.client_fds[i] = -1;
             goto kill;
         }
     }

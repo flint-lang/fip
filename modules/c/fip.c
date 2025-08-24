@@ -448,31 +448,40 @@ int main(int argc, char *argv[]) {
         fip_print(ID, "Failed to connect to master socket");
         return 1;
     }
-    fip_print(ID, "Connected to master, waiting for messages...");
+    fip_print(ID, "Successfully connected to master socket");
+
+    fip_msg_t msg = {0};
+    msg.type = FIP_MSG_CONNECT_REQUEST;
+    msg.u.con_req.setup_ok = true;
+    msg.u.con_req.version.major = FIP_MAJOR;
+    msg.u.con_req.version.minor = FIP_MINOR;
+    msg.u.con_req.version.patch = FIP_PATCH;
+    strncpy(msg.u.con_req.module_name, MODULE_NAME, sizeof(MODULE_NAME));
 
     // Parse the toml file for this module.
     toml_result_t toml = fip_slave_load_config(ID, MODULE_NAME);
     if (!parse_toml_file(toml)) {
         fip_print(ID, "The %s.toml file could not be parsed", MODULE_NAME);
+        msg.u.con_req.setup_ok = false;
         toml_free(toml);
-        goto kill;
+        goto send;
     }
     toml_free(toml);
     if (CONFIG.sources_len == 0) {
         fip_print(ID, "The '%s' module does not have any sources declared",
             MODULE_NAME);
-        goto kill;
+        goto send;
     }
     fip_print(ID, "Parsed %s.toml file", MODULE_NAME);
 
+send:
     // Send the connect message to the master now, as we are now able to
     // connect to it
-    fip_msg_t msg = {0};
-    msg.type = FIP_MSG_CONNECT_REQUEST;
-    msg.u.con_req.version.major = FIP_MAJOR;
-    msg.u.con_req.version.minor = FIP_MINOR;
-    msg.u.con_req.version.patch = FIP_PATCH;
-    strncpy(msg.u.con_req.module_name, MODULE_NAME, sizeof(MODULE_NAME));
+    if (!msg.u.con_req.setup_ok) {
+        fip_print(ID, "Sending shutdown request to master...");
+        fip_slave_send_message(ID, SOCKET_FD, msg_buf, &msg);
+        goto kill;
+    }
     fip_print(ID, "Sending connect request to master...");
     fip_slave_send_message(ID, SOCKET_FD, msg_buf, &msg);
 
