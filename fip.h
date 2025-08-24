@@ -86,14 +86,11 @@ const char *FIP_SOCKET_PATH = "/tmp/fip_socket";
 #define FIP_MSG_SIZE 1024
 #define FIP_SLAVE_DELAY 1000000 // in nanoseconds
 
-#define RED "\033[31m"
-#define GREEN "\033[32m"
-#define YELLOW "\033[33m"
-#define BLUE "\033[34m"
-#define CYAN "\033[36m"
-#define WHITE "\033[37m"
-#define DEFAULT "\033[0m"
-#define GREY "\033[90m"
+// The version of the FIP
+#define FIP_MAJOR 1
+#define FIP_MINOR 0
+#define FIP_PATCH 0
+
 #define FIP_TYPE_COUNT 12
 #define FIP_MAX_MODULE_NAME_LEN 32
 
@@ -125,7 +122,7 @@ typedef enum : uint8_t {
     FIP_MSG_SYMBOL_RESPONSE, // Slave response of FN_REQ
     FIP_MSG_COMPILE_REQUEST, // Master requesting all slaves to compile
     FIP_MSG_OBJECT_RESPONSE, // Slave responding compilation with .o file
-    FIP_MSG_KILL = 255,      // Kill command is special
+    FIP_MSG_KILL,            // Kill command comes last
 } fip_msg_type_t;
 
 /// @typedef `fip_msg_symbol_type_t`
@@ -135,6 +132,25 @@ typedef enum : uint8_t {
     FIP_SYM_FUNCTION,
     FIP_SYM_DATA,
 } fip_msg_symbol_type_t;
+
+/*
+ * ===============
+ * ARRAYS AND MAPS
+ * ===============
+ */
+
+/// @var `fip_msg_type_str`
+/// @brief A simple array containing all the string names of the possible
+/// message types
+const char *fip_msg_type_str[] = {
+    "FIP_MSG_UNKNOWN",
+    "FIP_MSG_CONNECT_REQUEST",
+    "FIP_MSG_SYMBOL_REQUEST",
+    "FIP_MSG_SYMBOL_RESPONSE",
+    "FIP_MSG_COMPILE_REQUEST",
+    "FIP_MSG_OBJECT_RESPONSE",
+    "FIP_MSG_KILL",
+};
 
 /*
  * =================
@@ -173,6 +189,7 @@ typedef struct {
         uint8_t minor;
         uint8_t patch;
     } version;
+    char module_name[FIP_MAX_MODULE_NAME_LEN];
 } fip_msg_connect_request_t;
 
 /// @typedef `fip_msg_symbol_request_t`
@@ -188,7 +205,7 @@ typedef struct {
 /// @brief Struct representing the symbol response message
 typedef struct {
     bool found;
-    char module_name[16];
+    char module_name[FIP_MAX_MODULE_NAME_LEN];
     fip_msg_symbol_type_t type;
     union {
         fip_sig_fn_t fn;
@@ -213,7 +230,7 @@ typedef struct {
 /// @brief Struct representing the object response message
 typedef struct {
     bool has_obj;
-    char module_name[16];
+    char module_name[FIP_MAX_MODULE_NAME_LEN];
     char paths[FIP_PATHS_SIZE];
 } fip_msg_object_response_t;
 
@@ -411,13 +428,10 @@ void fip_master_accept_pending_connections(int socket_fd);
 /// @function `fip_master_broadcast_message`
 /// @brief Broadcasts a given message to all connected slaves
 ///
-/// @param `socked_fd` The file descriptor of the socket to send the message
-/// to
 /// @param `buffer` The buffer in which the message will be encoded before
 /// sending it
 /// @param `message` The message to send to the socket
 void fip_master_broadcast_message( //
-    int socket_fd,                 //
     char buffer[FIP_MSG_SIZE],     //
     const fip_msg_t *message       //
 );
@@ -574,6 +588,10 @@ void fip_print(uint32_t id, const char *format, ...) {
     char prefix[64];
     va_list args;
 
+    const char *YELLOW = "\033[33m";
+    const char *CYAN = "\033[36m";
+    const char *DEFAULT = "\033[0m";
+
     // Create the prefix
     if (id == 0) {
         snprintf(prefix, sizeof(prefix), "[%sMaster%s]:  ", CYAN, DEFAULT);
@@ -634,11 +652,13 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             // Sending unknown or faulty message
             break;
         case FIP_MSG_CONNECT_REQUEST:
-            // The connect request just puts the versions into the buffer one by
-            // one and is done
+            // The connect request just puts the version info followed by the
+            // module name into the buffer and is done
             buffer[idx++] = message->u.con_req.version.major;
             buffer[idx++] = message->u.con_req.version.minor;
             buffer[idx++] = message->u.con_req.version.patch;
+            memcpy(buffer + idx, message->u.con_req.module_name,
+                FIP_MAX_MODULE_NAME_LEN);
             break;
         case FIP_MSG_SYMBOL_REQUEST:
             buffer[idx++] = message->u.sym_req.type;
@@ -656,7 +676,8 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             // We place all elements into the buffer one by one until we come to
             // the union
             buffer[idx++] = message->u.sym_res.found;
-            memcpy(buffer + idx, message->u.sym_res.module_name, 16);
+            memcpy(buffer + idx, message->u.sym_res.module_name,
+                FIP_MAX_MODULE_NAME_LEN);
             idx += 16;
             buffer[idx++] = message->u.sym_res.type;
             switch (message->u.sym_res.type) {
@@ -686,7 +707,8 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             // The sizes of the buffers are known so we can put them into the
             // buffer directly
             buffer[idx++] = message->u.obj_res.has_obj;
-            memcpy(buffer + idx, message->u.obj_res.module_name, 16);
+            memcpy(buffer + idx, message->u.obj_res.module_name,
+                FIP_MAX_MODULE_NAME_LEN);
             idx += 16;
             memcpy(buffer + idx, message->u.obj_res.paths, FIP_PATHS_SIZE);
             break;
@@ -750,6 +772,8 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             message->u.con_req.version.major = buffer[idx++];
             message->u.con_req.version.minor = buffer[idx++];
             message->u.con_req.version.patch = buffer[idx++];
+            memcpy(message->u.con_req.module_name, buffer + idx,
+                FIP_MAX_MODULE_NAME_LEN);
             break;
         case FIP_MSG_SYMBOL_REQUEST:
             message->u.sym_req.type = (fip_msg_symbol_type_t)buffer[idx++];
@@ -767,7 +791,8 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             // We place all elements into the buffer one by one until we come to
             // the union
             message->u.sym_res.found = (bool)buffer[idx++];
-            memcpy(message->u.sym_res.module_name, buffer + idx, 16);
+            memcpy(message->u.sym_res.module_name, buffer + idx,
+                FIP_MAX_MODULE_NAME_LEN);
             idx += 16;
             message->u.sym_res.type = (fip_msg_symbol_type_t)buffer[idx++];
             switch (message->u.sym_res.type) {
@@ -843,7 +868,7 @@ void fip_free_msg(fip_msg_t *message) {
             break;
         case FIP_MSG_SYMBOL_RESPONSE:
             message->u.sym_res.found = false;
-            memset(message->u.sym_res.module_name, 0, 16);
+            memset(message->u.sym_res.module_name, 0, FIP_MAX_MODULE_NAME_LEN);
             switch (message->u.sym_res.type) {
                 case FIP_SYM_UNKNOWN:
                     // Do nothing on already freed / unknwon symbol
@@ -873,7 +898,7 @@ void fip_free_msg(fip_msg_t *message) {
             memset(message->u.com_req.target.abi, 0, 16);
             break;
         case FIP_MSG_OBJECT_RESPONSE:
-            memset(message->u.obj_res.module_name, 0, 16);
+            memset(message->u.obj_res.module_name, 0, FIP_MAX_MODULE_NAME_LEN);
             memset(message->u.obj_res.paths, 0, FIP_PATHS_SIZE);
             break;
         case FIP_MSG_KILL:
@@ -915,7 +940,7 @@ void fip_create_hash(char hash[8], const char *file_path) {
         pos_hash *= 0xc2b2ae35;
         pos_hash ^= pos_hash >> 16;
 
-        hash[i] = charset[pos_hash % 61];
+        hash[i] = charset[pos_hash % charset_size];
         seed = pos_hash;
     }
 }
@@ -1139,16 +1164,11 @@ void fip_master_accept_pending_connections(int socket_fd) {
 }
 
 void fip_master_broadcast_message( //
-    int socket_fd,                 //
     char buffer[FIP_MSG_SIZE],     //
     const fip_msg_t *message       //
 ) {
-    // Accept any pending connections first
-    fip_master_accept_pending_connections(socket_fd);
-
     fip_print(0, "Broadcasting message to %d slaves",
         master_state.client_count);
-
     fip_encode_msg(buffer, message);
 
     // Send to all connected clients
@@ -1182,24 +1202,41 @@ uint8_t fip_master_await_responses(        //
     // Await responses from all slaves
     uint8_t wrong_count = 0;
     for (int i = 0; i < master_state.client_count; i++) {
-        if (master_state.client_fds[i] != -1) {
+        if (master_state.client_fds[i] == -1) {
+            continue;
+        }
+        ssize_t recieved = 0;
+        bool is_closed = false;
+        while (recieved == 0 && !is_closed) {
+            if (master_state.client_fds[i] == -1) {
+                // The interop module closed while we waited on it
+                is_closed = true;
+                continue;
+            }
             memset(buffer, 0, FIP_MSG_SIZE);
-            ssize_t recieved = recv(                                //
+            recieved = recv(                                        //
                 master_state.client_fds[i], buffer, FIP_MSG_SIZE, 0 //
             );
             if (recieved == -1) {
                 fip_print(0, "Failed to recieve message from slave %d", i + 1);
                 wrong_count++;
                 continue;
+            } else if (recieved == 0) {
+                // Wait 100µs before retry
+                struct timespec time = {.tv_sec = 0, .tv_nsec = 100000};
+                nanosleep(&time, NULL);
             }
-            fip_decode_msg(buffer, &responses[*response_count]);
-            fip_print(0, "Recieved message from slave %d: %d", i + 1,
-                responses[*response_count].type);
-            if (responses[*response_count].type != expected_msg_type) {
-                wrong_count++;
-            }
-            (*response_count)++;
         }
+        if (is_closed) {
+            continue;
+        }
+        fip_decode_msg(buffer, &responses[*response_count]);
+        fip_print(0, "Recieved message from slave %d: %s", i + 1,
+            fip_msg_type_str[responses[*response_count].type]);
+        if (responses[*response_count].type != expected_msg_type) {
+            wrong_count++;
+        }
+        (*response_count)++;
     }
     return wrong_count;
 }
@@ -1209,7 +1246,7 @@ bool fip_master_symbol_request( //
     const fip_msg_t *message    //
 ) {
     assert(message->type == FIP_MSG_SYMBOL_REQUEST);
-    fip_master_broadcast_message(master_state.server_fd, buffer, message);
+    fip_master_broadcast_message(buffer, message);
     uint8_t wrong_msg_count = fip_master_await_responses( //
         buffer,                                           //
         master_state.responses,                           //
@@ -1236,7 +1273,7 @@ bool fip_master_compile_request( //
     const fip_msg_t *message     //
 ) {
     assert(message->type == FIP_MSG_COMPILE_REQUEST);
-    fip_master_broadcast_message(master_state.server_fd, buffer, message);
+    fip_master_broadcast_message(buffer, message);
     uint8_t wrong_msg_count = fip_master_await_responses( //
         buffer,                                           //
         master_state.responses,                           //

@@ -465,13 +465,24 @@ int main(int argc, char *argv[]) {
     }
     fip_print(ID, "Parsed %s.toml file", MODULE_NAME);
 
-    // Print all sources and all compile flags
-    for (uint32_t i = 0; i < CONFIG.u.c.compile_flags_len; i++) {
-        fip_print(ID, "compile_flags[%u]: %s", i, CONFIG.u.c.compile_flags[i]);
+    // Send the connect message to the master now, as we are now able to
+    // connect to it
+    fip_msg_t msg = {0};
+    msg.type = FIP_MSG_CONNECT_REQUEST;
+    msg.u.con_req.version.major = FIP_MAJOR;
+    msg.u.con_req.version.minor = FIP_MINOR;
+    msg.u.con_req.version.patch = FIP_PATCH;
+    strncpy(msg.u.con_req.module_name, MODULE_NAME, sizeof(MODULE_NAME));
+    fip_print(ID, "Sending connect request to master...");
+    fip_slave_send_message(ID, SOCKET_FD, msg_buf, &msg);
+
+    // Print all sources and all compile flags and parse all source files
+    for (uint32_t i = 0; i < CONFIG.compile_flags_len; i++) {
+        fip_print(ID, "compile_flags[%u]: %s", i, CONFIG.compile_flags[i]);
     }
-    for (uint32_t i = 0; i < CONFIG.u.c.sources_len; i++) {
-        fip_print(ID, "source[%u]: %s", i, CONFIG.u.c.sources[i]);
-        scan_c_file_for_fip_exports(CONFIG.u.c.sources[i]);
+    for (uint32_t i = 0; i < CONFIG.sources_len; i++) {
+        fip_print(ID, "source[%u]: %s", i, CONFIG.sources[i]);
+        scan_c_file_for_fip_exports(CONFIG.sources[i]);
     }
 
     // Main loop - wait for messages from master
@@ -491,7 +502,8 @@ int main(int argc, char *argv[]) {
                     fip_print(ID, "Recieved unknown message");
                     break;
                 case FIP_MSG_CONNECT_REQUEST:
-                    fip_print(ID, "Connect Request");
+                    // The slave should not recieve a message it sends
+                    assert(false);
                     break;
                 case FIP_MSG_SYMBOL_REQUEST:
                     fip_print(ID, "Symbol Request");
@@ -531,6 +543,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+kill:
     fip_slave_cleanup_socket(SOCKET_FD);
     fip_print(ID, "ending...");
     return 0;

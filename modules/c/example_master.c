@@ -36,8 +36,34 @@ int main() {
         fip_spawn_interop_module(&interop_modules, module_path);
     }
 
-    // Give the fip-c IM time to connect
-    fip_print(0, "Waiting for fip-c to connect...");
+    // Give the Interop Modules time to connect
+    fip_print(0, "Waiting for interop modules to connect...");
+    fip_master_accept_pending_connections(socket_fd);
+    // Wait for all connect messages from the IMs
+    fip_print(0, "Waiting for all connect requests...");
+    fip_master_await_responses(       //
+        msg_buf,                      //
+        master_state.responses,       //
+        &master_state.response_count, //
+        FIP_MSG_CONNECT_REQUEST       //
+    );
+    // Check if each interop module has the correct version
+    for (uint8_t i = 0; i < master_state.response_count; i++) {
+        const fip_msg_t *response = &master_state.responses[i];
+        const fip_msg_connect_request_t *req = &response->u.con_req;
+        assert(response->type == FIP_MSG_CONNECT_REQUEST);
+        if (req->version.major != FIP_MAJOR    //
+            || req->version.minor != FIP_MINOR //
+            || req->version.patch != FIP_PATCH //
+        ) {
+            fip_print(0, "Version mismatch with module '%s'",
+                response->u.con_req.module_name);
+            fip_print(0, "  Expected 'v%d.%d.%d' but got 'v%d.%d.%d'",
+                FIP_MAJOR, FIP_MINOR, FIP_PATCH, req->version.major,
+                req->version.minor, req->version.patch);
+            goto kill;
+        }
+    }
 
     // Broadcast a few definitions. These definitions are normally not created
     // by hand but gathered in the compiler in a list or something similar, so
@@ -86,7 +112,7 @@ kill:
     msg.type = FIP_MSG_KILL;
     msg.u.kill.reason = FIP_KILL_FINISH;
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
-    fip_master_broadcast_message(socket_fd, msg_buf, &msg);
+    fip_master_broadcast_message(msg_buf, &msg);
 
     // Clean up
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 100000000}, NULL);
