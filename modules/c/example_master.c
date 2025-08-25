@@ -79,9 +79,10 @@ int main() {
     msg.u.sym_req.type = FIP_SYM_FUNCTION;
     strncpy(msg.u.sym_req.sig.fn.name, "foo", 3);
     msg.u.sym_req.sig.fn.rets_len = 1;
-    msg.u.sym_req.sig.fn.rets = malloc(sizeof(fip_sig_type_t));
-    msg.u.sym_req.sig.fn.rets[0].is_mutable = false;
-    msg.u.sym_req.sig.fn.rets[0].type = FIP_I32;
+    msg.u.sym_req.sig.fn.rets = malloc(sizeof(fip_type_t));
+    msg.u.sym_req.sig.fn.rets[0].is_mutable = true;
+    msg.u.sym_req.sig.fn.rets[0].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.rets[0].u.prim = FIP_I32;
     // "foo()->i32"
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
     if (!fip_master_symbol_request(msg_buf, &msg)) {
@@ -91,11 +92,13 @@ int main() {
 
     strncpy(msg.u.sym_req.sig.fn.name, "bar", 3);
     msg.u.sym_req.sig.fn.args_len = 2;
-    msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_sig_type_t) * 2);
-    msg.u.sym_req.sig.fn.args[0].is_mutable = false;
-    msg.u.sym_req.sig.fn.args[0].type = FIP_I32;
-    msg.u.sym_req.sig.fn.args[1].is_mutable = false;
-    msg.u.sym_req.sig.fn.args[1].type = FIP_I32;
+    msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_type_t) * 2);
+    msg.u.sym_req.sig.fn.args[0].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[0].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[0].u.prim = FIP_I32;
+    msg.u.sym_req.sig.fn.args[1].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[1].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[1].u.prim = FIP_I32;
     // "bar(i32,i32)->i32"
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
     if (!fip_master_symbol_request(msg_buf, &msg)) {
