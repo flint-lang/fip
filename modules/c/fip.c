@@ -361,15 +361,12 @@ bool compile_file(                                    //
         }
     }
     // Add source and output
-    char temp[256];
     char output_path[64] = {0};
     snprintf(output_path, sizeof(output_path), ".fip/cache/%.8s.o", hash);
-    snprintf(temp, sizeof(temp), "%s -o %s", file_path, output_path);
 
     char compile_cmd[1024] = {0};
-    snprintf(compile_cmd, sizeof(compile_cmd), "%s -c %s %s %s -o %s",
+    snprintf(compile_cmd, sizeof(compile_cmd), "%s -x c -c %s %s %s -o %s",
         CONFIG.compiler, compile_flags, defines, file_path, output_path);
-    strcat(compile_cmd, temp);
 
     fip_print(ID, "Executing: %s", compile_cmd);
 
