@@ -58,6 +58,12 @@ typedef struct {
     char **compile_flags;
 } fip_module_config_t;
 
+typedef struct {
+    fip_type_t *fields;
+    int current_index;
+    uint32_t module_id;
+} field_visitor_data;
+
 #define MAX_SYMBOLS 100
 #define MODULE_NAME "fip-c"
 
@@ -130,8 +136,53 @@ bool parse_toml_file(toml_result_t toml) {
     return true;
 }
 
+enum CXChildVisitResult count_struct_fields_visitor( //
+    CXCursor cursor,                                 //
+    [[maybe_unused]] CXCursor parent,                //
+    CXClientData client_data                         //
+) {
+    int *field_count = (int *)client_data;
+    if (clang_getCursorKind(cursor) == CXCursor_FieldDecl) {
+        (*field_count)++;
+    }
+    return CXChildVisit_Continue;
+}
+
+bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type);
+
+enum CXChildVisitResult struct_field_visitor( //
+    CXCursor cursor,                          //
+    [[maybe_unused]] CXCursor parent,         //
+    CXClientData client_data                  //
+) {
+    field_visitor_data *data = (field_visitor_data *)client_data;
+
+    if (clang_getCursorKind(cursor) == CXCursor_FieldDecl) {
+        CXType field_type = clang_getCursorType(cursor);
+
+        if (!clang_type_to_fip_type(                            //
+                field_type, &data->fields[data->current_index]) //
+        ) {
+            fip_print(data->module_id,
+                "Failed to convert field type at index %d",
+                data->current_index);
+            return CXChildVisit_Break;
+        }
+
+        data->current_index++;
+    }
+
+    return CXChildVisit_Continue;
+}
+
 bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
     fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
+
+    // Debug output to see what type we're dealing with
+    // CXString type_spelling = clang_getTypeSpelling(clang_type);
+    // const char *type_name = clang_getCString(type_spelling);
+    // fip_print(ID, "Processing type: %s (kind: %d)", type_name,
+    // clang_type.kind); clang_disposeString(type_spelling);
 
     switch (clang_type.kind) {
         case CXType_UChar:
@@ -192,9 +243,110 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
                 // Other pointer types
                 fip_type->type = FIP_TYPE_PTR;
                 fip_type->u.ptr.base_type = malloc(sizeof(fip_type_t));
-                return clang_type_to_fip_type(pointee,
-                    fip_type->u.ptr.base_type);
+                return clang_type_to_fip_type(         //
+                    pointee, fip_type->u.ptr.base_type //
+                );
             }
+        }
+        case CXType_Elaborated: {
+            // For elaborated types (like 'struct Foo', 'union Bar'), get the
+            // named type
+            CXType named_type = clang_Type_getNamedType(clang_type);
+
+            CXString elaborated_name = clang_getTypeSpelling(clang_type);
+            CXString named_name = clang_getTypeSpelling(named_type);
+            fip_print(                                          //
+                ID, "Elaborated '%s' -> named '%s' (kind: %d)", //
+                clang_getCString(elaborated_name),              //
+                clang_getCString(named_name),                   //
+                named_type.kind                                 //
+            );
+            clang_disposeString(elaborated_name);
+            clang_disposeString(named_name);
+
+            // Recursively process the named type
+            if (clang_type_to_fip_type(named_type, fip_type)) {
+                fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
+                return true;
+            } else {
+                return false;
+            }
+        }
+        case CXType_Typedef: {
+            // For typedef'ed types, get the canonical (underlying) type
+            CXType canonical_type = clang_getCanonicalType(clang_type);
+
+            CXString typedef_name = clang_getTypeSpelling(clang_type);
+            CXString canonical_name = clang_getTypeSpelling(canonical_type);
+            fip_print(                                //
+                ID, "Typedef '%s' -> canonical '%s'", //
+                clang_getCString(typedef_name),       //
+                clang_getCString(canonical_name)      //
+            );
+            clang_disposeString(typedef_name);
+            clang_disposeString(canonical_name);
+
+            // Recursively process the canonical type
+            if (clang_type_to_fip_type(canonical_type, fip_type)) {
+                fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
+                return true;
+            } else {
+                return false;
+            }
+        }
+        case CXType_Record: { // CXType_Record represents structs/unions
+            fip_print(ID, "Processing struct/record type");
+            fip_type->type = FIP_TYPE_STRUCT;
+
+            // Get the struct declaration cursor
+            CXCursor type_cursor = clang_getTypeDeclaration(clang_type);
+
+            // Count fields first
+            int field_count = 0;
+            clang_visitChildren(                                       //
+                type_cursor, count_struct_fields_visitor, &field_count //
+            );
+            fip_print(ID, "Struct has %d fields", field_count);
+            if (field_count <= 0 || field_count > 255) {
+                fip_print(ID, "Invalid struct field count: %d", field_count);
+                return false;
+            }
+
+            fip_type->u.struct_t.field_count = (uint8_t)field_count;
+            fip_type->u.struct_t.fields = malloc( //
+                sizeof(fip_type_t) * field_count  //
+            );
+
+            // Structure to pass data to the visitor
+            field_visitor_data visitor_data = {
+                .fields = fip_type->u.struct_t.fields,
+                .current_index = 0,
+                .module_id = ID,
+            };
+
+            // Visit each field and convert its type
+            clang_visitChildren(                                 //
+                type_cursor, struct_field_visitor, &visitor_data //
+            );
+
+            // Check if we processed the expected number of fields
+            if (visitor_data.current_index != field_count) {
+                fip_print(                                     //
+                    ID, "Processed %d fields but expected %d", //
+                    visitor_data.current_index, field_count    //
+                );
+                free(fip_type->u.struct_t.fields);
+                return false;
+            }
+
+            fip_print(ID, "Successfully processed struct with %d fields",
+                field_count);
+            return true;
+        }
+        case CXType_Complex: {
+            // TODO: Handle complex types if needed
+            fip_print(ID, "Complex types not yet supported");
+            return false;
         }
         case CXType_Void:
             // Handle void return type - you might want to handle this
@@ -227,8 +379,9 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
     // Get parameter count and types
     int num_args = clang_getNumArgTypes(function_type);
     if (num_args < 0) {
-        fip_print(ID, "Could not get argument count for function %s",
-            fn_sig->name);
+        fip_print(                                                           //
+            ID, "Could not get argument count for function %s", fn_sig->name //
+        );
         free(fn_sig->rets);
         return false;
     }
@@ -304,8 +457,9 @@ enum CXChildVisitResult visit_ast_node( //
         }
 
         if (symbol_count >= MAX_SYMBOLS) {
-            fip_print(ID,
-                "Maximum symbols reached, skipping remaining functions");
+            fip_print(                                                      //
+                ID, "Maximum symbols reached, skipping remaining functions" //
+            );
             return CXChildVisit_Break;
         }
 
