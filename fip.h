@@ -903,7 +903,7 @@ void fip_free_msg(fip_msg_t *message) {
                 case FIP_SYM_UNKNOWN:
                     // Do nothing on already freed / unknwon symbol
                     break;
-                case FIP_SYM_FUNCTION:
+                case FIP_SYM_FUNCTION: {
                     message->u.sym_req.type = FIP_SYM_UNKNOWN;
                     memset(message->u.sym_req.sig.fn.name, 0, 128);
                     uint8_t args_len = message->u.sym_req.sig.fn.args_len;
@@ -923,6 +923,7 @@ void fip_free_msg(fip_msg_t *message) {
                     }
                     message->u.sym_req.sig.fn.rets_len = 0;
                     break;
+                }
                 case FIP_SYM_DATA:
                     // Not implemented yet
                     assert(false);
