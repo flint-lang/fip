@@ -350,6 +350,19 @@ bool fip_parse_type_string(       //
 /// @return `fip_sig_fn_t` The parsed function signature
 fip_sig_fn_t fip_parse_fn_signature(uint32_t id, const char *signature);
 
+/// @function `fip_print_type`
+/// @brief "Prints" a given type into the buffer which then can be used to print
+/// the whole type in one fip_print call
+///
+/// @param `buffer` The buffer in which the type string will be stored in
+/// @param `idx` The current index in the buffer, the "write pointer"
+/// @param `type` The type to print into the buffer
+void fip_print_type(       //
+    char buffer[1024],     //
+    int *idx,              //
+    const fip_type_t *type //
+);
+
 /// @function `fip_print_sig_fn`
 /// @brief Prints a parsed function signature to the console
 ///
@@ -597,7 +610,7 @@ const char *fip_type_names[] = {
     "f32",
     "f64",
     "bool",
-    "str",
+    "c_str",
 };
 
 void fip_print(uint32_t id, const char *format, ...) {
@@ -1051,27 +1064,62 @@ void fip_create_hash(char hash[8], const char *file_path) {
     }
 }
 
+void fip_print_type(       //
+    char buffer[1024],     //
+    int *idx,              //
+    const fip_type_t *type //
+) {
+    if (*idx == 0) {
+        memset(buffer, 0, 1024);
+    }
+    switch (type->type) {
+        case FIP_TYPE_PRIMITIVE: {
+            const char *type_name = fip_type_names[type->u.prim];
+            uint8_t type_len = (uint8_t)strlen(type_name);
+            memcpy(buffer + *idx, type_name, type_len);
+            *idx += type_len;
+            break;
+        }
+        case FIP_TYPE_PTR:
+            fip_print_type(buffer, idx, type->u.ptr.base_type);
+            buffer[(*idx)++] = '*';
+            break;
+        case FIP_TYPE_STRUCT:
+            buffer[(*idx)++] = '{';
+            buffer[(*idx)++] = ' ';
+            for (uint8_t i = 0; i < type->u.struct_t.field_count; i++) {
+                fip_print_type(buffer, idx, &type->u.struct_t.fields[i]);
+                if (i + 1 != type->u.struct_t.field_count) {
+                    buffer[(*idx)++] = ',';
+                }
+                buffer[(*idx)++] = ' ';
+            }
+            buffer[(*idx)++] = '}';
+            break;
+    }
+}
+
 void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig) {
     fip_print(id, "  Function Signature:");
     fip_print(id, "    name: %s", sig->name);
+    char buffer[1024] = {0};
+    int idx = 0;
     for (uint32_t i = 0; i < sig->args_len; i++) {
-        assert(sig->args[i].type == FIP_TYPE_PRIMITIVE);
+        idx = 0;
+        fip_print_type(buffer, &idx, &sig->args[i]);
         if (sig->args[i].is_mutable) {
-            fip_print(id, "    arg[%u]: mut %s", i,
-                fip_type_names[sig->args[i].u.prim]);
+            fip_print(id, "    arg[%u]: mut %s", i, buffer);
         } else {
-            fip_print(id, "    arg[%u]: const %s", i,
-                fip_type_names[sig->args[i].u.prim]);
+            fip_print(id, "    arg[%u]: const %s", i, buffer);
         }
     }
     for (uint32_t i = 0; i < sig->rets_len; i++) {
-        assert(sig->rets[i].type == FIP_TYPE_PRIMITIVE);
+        idx = 0;
+        fip_print_type(buffer, &idx, &sig->rets[i]);
         if (sig->rets[i].is_mutable) {
-            fip_print(id, "    ret[%u]: mut %s", i,
-                fip_type_names[sig->rets[i].u.prim]);
+            fip_print(id, "    ret[%u]: mut %s", i, buffer);
         } else {
-            fip_print(id, "    ret[%u]: const %s", i,
-                fip_type_names[sig->rets[i].u.prim]);
+            fip_print(id, "    ret[%u]: const %s", i, buffer);
         }
     }
 }
