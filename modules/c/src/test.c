@@ -1,12 +1,10 @@
-#include "fip.h"
-
 #include <stdio.h>
 
-int FIP_FN foo() {
+int foo() {
     return 0;
 }
 
-int FIP_FN bar(int x, int y) {
+int bar(int x, int y) {
     return x + y;
 }
 
