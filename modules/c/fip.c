@@ -3,6 +3,8 @@
 #define FIP_IMPLEMENTATION
 #include "fip.h"
 
+#include <clang-c/Index.h>
+
 #include <assert.h>
 #include <stdlib.h>
 #include <time.h>
@@ -128,142 +130,228 @@ bool parse_toml_file(toml_result_t toml) {
     return true;
 }
 
-bool parse_fip_function_line( //
-    const char *line,         //
-    const char *file_path,    //
-    int line_num              //
-) {
-    // Exmaple input: "int FIP_FN foo(int x, float y) {"
-    // We need to extract: return_type="int", name="foo", parameters="int,float"
-    fip_c_symbol_t symbol = {0};
-    strcpy(symbol.source_file_path, file_path);
-    symbol.needed = false;
-    symbol.line_number = line_num;
-    symbol.type = FIP_SYM_FUNCTION;
-    fip_sig_fn_t fn_sig = {0};
+bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
+    fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
 
-    // Remove leading whitespaces
-    char const *start = line;
-    while (*start == ' ' || *start == '\t') {
-        start++;
-    }
-
-    // Find FIP_FN
-    char *fip_fn_pos = strstr(start, "FIP_FN");
-    if (!fip_fn_pos) {
-        return false;
-    }
-    char *func_start = fip_fn_pos + 6; // Skip "FIP_FN"
-
-    // Remove all whitespaces from the return type
-    fip_fn_pos--;
-    while (*fip_fn_pos == ' ' || *fip_fn_pos == '\t') {
-        fip_fn_pos--;
-    }
-    size_t ret_type_len = fip_fn_pos - start + 1;
-    // Extract return type(s) (everything before FIP_FN)
-    if (!fip_parse_type_string(ID, start, c_type_names,      //
-            0, ret_type_len, &fn_sig.rets, &fn_sig.rets_len) //
-    ) {
-        fip_print(ID, "Could not parse return types of '%s'", line);
-        return false;
-    }
-
-    // Find function name
-    while (*func_start == ' ' || *func_start == '\t') {
-        func_start++;
-    }
-    char *paren_open = strchr(func_start, '(');
-    char *paren_close = strchr(func_start, ')');
-    if (!paren_open || !paren_close) {
-        fip_print(ID, "Invalid function syntax on line %d", line_num);
-        return false;
-    }
-
-    // Store function name
-    memcpy(fn_sig.name, func_start, paren_open - func_start);
-
-    // Extract all parameter types one by one
-    start = paren_open + 1;
-    uint32_t type_len = 0;
-
-    // For now everything until the first space is the first parameter and then
-    // everything until , or ) is considered a non-type
-    bool is_at_end = paren_open + 1 == paren_close;
-    while (!is_at_end) {
-        switch (*(start + type_len)) {
-            case ',':
-            case ')': {
-                const bool is_r_paren = *(start + type_len) == ')';
-                // First we decrement the type_len until we reach the first
-                // non-alphanumeric character
-                // Everything until there is the type
-                uint32_t comma_idx = type_len;
-                type_len--;
-                char c = *(start + type_len);
-                while (is_alpha_num(c)) {
-                    type_len--;
-                    c = *(start + type_len);
-                }
-                if (!fip_parse_type_string(ID, start, c_type_names,  //
-                        0, type_len, &fn_sig.args, &fn_sig.args_len) //
-                ) {
-                    fip_print(ID, "Could not parse arg types of '%s'", line);
-                    return false;
-                }
-                start = start + comma_idx + 1;
-                type_len = 0;
-
-                if (is_r_paren) {
-                    is_at_end = true;
-                }
-                break;
+    switch (clang_type.kind) {
+        case CXType_UChar:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_U8;
+            return true;
+        case CXType_UShort:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_U16;
+            return true;
+        case CXType_UInt:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_U32;
+            return true;
+        case CXType_ULong:
+        case CXType_ULongLong:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_U64;
+            return true;
+        case CXType_Char_S:
+        case CXType_SChar:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_I8;
+            return true;
+        case CXType_Short:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_I16;
+            return true;
+        case CXType_Int:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_I32;
+            return true;
+        case CXType_Long:
+        case CXType_LongLong:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_I64;
+            return true;
+        case CXType_Float:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_F32;
+            return true;
+        case CXType_Double:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_F64;
+            return true;
+        case CXType_Bool:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_BOOL;
+            return true;
+        case CXType_Pointer: {
+            CXType pointee = clang_getPointeeType(clang_type);
+            if (pointee.kind == CXType_Char_S || pointee.kind == CXType_SChar) {
+                // char* -> treat as C string
+                fip_type->type = FIP_TYPE_PRIMITIVE;
+                fip_type->u.prim = FIP_C_STR;
+                return true;
+            } else {
+                // Other pointer types
+                fip_type->type = FIP_TYPE_PTR;
+                fip_type->u.ptr.base_type = malloc(sizeof(fip_type_t));
+                return clang_type_to_fip_type(pointee,
+                    fip_type->u.ptr.base_type);
             }
-            default:
-                type_len++;
-                break;
         }
+        case CXType_Void:
+            // Handle void return type - you might want to handle this
+            // differently
+            return false;
+        default:
+            return false;
+    }
+}
+
+bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
+    // Get function name
+    CXString name = clang_getCursorSpelling(cursor);
+    const char *name_cstr = clang_getCString(name);
+    strncpy(fn_sig->name, name_cstr, sizeof(fn_sig->name) - 1);
+    clang_disposeString(name);
+
+    CXType function_type = clang_getCursorType(cursor);
+
+    // Get return type
+    CXType return_type = clang_getResultType(function_type);
+    fn_sig->rets_len = 1;
+    fn_sig->rets = malloc(sizeof(fip_type_t));
+    if (!clang_type_to_fip_type(return_type, &fn_sig->rets[0])) {
+        fip_print(ID, "Unsupported return type for function %s", fn_sig->name);
+        free(fn_sig->rets);
+        return false;
     }
 
-    symbol.signature.fn = fn_sig;
-    symbols[symbol_count] = symbol;
+    // Get parameter count and types
+    int num_args = clang_getNumArgTypes(function_type);
+    if (num_args < 0) {
+        fip_print(ID, "Could not get argument count for function %s",
+            fn_sig->name);
+        free(fn_sig->rets);
+        return false;
+    }
+
+    fn_sig->args_len = num_args;
+    if (num_args > 0) {
+        fn_sig->args = malloc(sizeof(fip_type_t) * num_args);
+        for (int i = 0; i < num_args; i++) {
+            CXType arg_type = clang_getArgType(function_type, i);
+            if (!clang_type_to_fip_type(arg_type, &fn_sig->args[i])) {
+                fip_print(ID, "Unsupported argument type %d for function %s", i,
+                    fn_sig->name);
+                free(fn_sig->args);
+                free(fn_sig->rets);
+                return false;
+            }
+        }
+    } else {
+        fn_sig->args = NULL;
+    }
+
     return true;
 }
 
-void scan_c_file_for_fip_exports(const char *file_path) {
-    FILE *file = fopen(file_path, "r");
-    if (!file) {
-        fip_print(ID, "Could not open %s", file_path);
-        return;
+enum CXChildVisitResult visit_ast_node( //
+    CXCursor cursor,                    //
+    [[maybe_unused]] CXCursor parent,   //
+    CXClientData client_data            //
+) {
+    const char *file_path = (const char *)client_data;
+
+    // Only process nodes from the file we're parsing (not from #includes)
+    CXSourceLocation location = clang_getCursorLocation(cursor);
+    CXFile file;
+    unsigned line, column, offset;
+    clang_getExpansionLocation(location, &file, &line, &column, &offset);
+
+    if (file) {
+        CXString filename = clang_getFileName(file);
+        const char *filename_cstr = clang_getCString(filename);
+
+        // Skip if this cursor is not from our target file
+        if (strcmp(filename_cstr, file_path) != 0) {
+            clang_disposeString(filename);
+            return CXChildVisit_Continue;
+        }
+        clang_disposeString(filename);
     }
 
-    char line[1024];
-    int line_num = 0;
+    enum CXCursorKind kind = clang_getCursorKind(cursor);
 
-    fip_print(ID, "Scanning %s for FIP_FN functions...", file_path);
+    // We're looking for function definitions
+    if (kind == CXCursor_FunctionDecl) {
+        // Get function name first to check if it's main
+        CXString name = clang_getCursorSpelling(cursor);
+        const char *name_cstr = clang_getCString(name);
+        // Skip main function
+        if (strcmp(name_cstr, "main") == 0) {
+            clang_disposeString(name);
+            return CXChildVisit_Continue;
+        }
+        clang_disposeString(name);
 
-    while (fgets(line, sizeof(line), file) && symbol_count < MAX_SYMBOLS) {
-        line_num++;
+        // Check if function has external linkage
+        enum CXLinkageKind linkage = clang_getCursorLinkage(cursor);
+        if (linkage != CXLinkage_External) {
+            return CXChildVisit_Continue;
+        }
 
-        // Look for FIP_FN in the line
-        if (strstr(line, "FIP_FN")) {
-            if (parse_fip_function_line(line, file_path, line_num)) {
-                fip_print(ID, "Found: '%s' at",
-                    symbols[symbol_count].signature.fn.name);
-                fip_print(                                                //
-                    ID, "  LineNo: %u", symbols[symbol_count].line_number //
-                );
-                fip_print(ID, "  Source: '%s'",            //
-                    symbols[symbol_count].source_file_path //
-                );
-                fip_print_sig_fn(ID, &(symbols[symbol_count].signature.fn));
-                symbol_count++;
-            }
+        // Check if function has a body (is implemented, not just declared)
+        if (!clang_isCursorDefinition(cursor)) {
+            return CXChildVisit_Continue;
+        }
+
+        if (symbol_count >= MAX_SYMBOLS) {
+            fip_print(ID,
+                "Maximum symbols reached, skipping remaining functions");
+            return CXChildVisit_Break;
+        }
+
+        // Extract function information
+        fip_c_symbol_t symbol = {0};
+        strncpy(symbol.source_file_path, file_path,
+            sizeof(symbol.source_file_path) - 1);
+        symbol.needed = false;
+        symbol.line_number = (int)line;
+        symbol.type = FIP_SYM_FUNCTION;
+
+        if (extract_function_signature(cursor, &symbol.signature.fn)) {
+            symbols[symbol_count] = symbol;
+
+            fip_print(ID, "Found extern function: '%s' at line %d",
+                symbol.signature.fn.name, symbol.line_number);
+            fip_print_sig_fn(ID, &symbol.signature.fn);
+
+            symbol_count++;
         }
     }
 
-    fclose(file);
-    fip_print(ID, "Found %d FIP functions in %s", symbol_count, file_path);
+    return CXChildVisit_Recurse;
+}
+
+void parse_c_file(const char *c_file) {
+    CXIndex index = clang_createIndex(0, 0);
+    CXTranslationUnit unit = clang_parseTranslationUnit(        //
+        index, c_file, NULL, 0, NULL, 0, CXTranslationUnit_None //
+    );
+
+    if (unit == NULL) {
+        fip_print(ID, "Unable to parse file %s", c_file);
+        return;
+    }
+
+    fip_print(ID, "Scanning %s for extern functions with implementations...",
+        c_file);
+
+    CXCursor cursor = clang_getTranslationUnitCursor(unit);
+    clang_visitChildren(cursor, visit_ast_node, (CXClientData)c_file);
+
+    clang_disposeTranslationUnit(unit);
+    clang_disposeIndex(index);
+
+    fip_print(ID, "Found %d extern functions in %s", symbol_count, c_file);
 }
 
 void handle_symbol_request(    //
@@ -487,7 +575,7 @@ send:
     }
     for (uint32_t i = 0; i < CONFIG.sources_len; i++) {
         fip_print(ID, "source[%u]: %s", i, CONFIG.sources[i]);
-        scan_c_file_for_fip_exports(CONFIG.sources[i]);
+        parse_c_file(CONFIG.sources[i]);
     }
 
     // Main loop - wait for messages from master

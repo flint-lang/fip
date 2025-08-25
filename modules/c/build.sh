@@ -19,7 +19,7 @@ flags=(
 )
 
 clang "${flags[@]}" -o example_master example_master.c "$ROOT/toml/tomlc17.c" || exit 1
-clang "${flags[@]}" -o fip-c fip.c "$ROOT/toml/tomlc17.c" || exit 1
+clang "${flags[@]}" -o fip-c fip.c "$ROOT/toml/tomlc17.c" -lclang || exit 1
 
 cd "$ROOT" || exit 1
 

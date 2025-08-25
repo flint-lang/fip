@@ -27,37 +27,11 @@
  *   - Targetted Object resolved (The path to the slave's object)
  */
 
-/*
- * If FIP_LIB is defined the `fip.h` library will act as a wrapper to be used
- * within C source files to create bindings which can be understood by the
- * `fip-c` Interop Module. The FIP_LIB definition is defined by default and it
- * needs to be undefined using the NO_FIP_LIB definition, but that only needs to
- * be done when creating the `fip-c` Interop Module itself, so users will just
- * need to include this file and use the provided annotations and nothing more.
- */
-
 #ifdef FIP_DEBUG_MODE
-#define NO_FIP_LIB         // For debugging purposes
 #define FIP_IMPLEMENTATION // For debugging purposes
 #define FIP_MASTER
 #define FIP_SLAVE
 #endif
-
-#ifndef NO_FIP_LIB
-
-/*
- * All the definitions to use inside binding files to bind C to FIP
- */
-
-/// @macro `FIP_FN`
-/// @brief This macro is used to signal the FIP that this function is exported
-///
-/// @example This macro can be used like this:
-///         int FIP_FN foo() { ... }
-///         void FIP_FN bar();
-#define FIP_FN extern __attribute__((section(".fip_exports")))
-
-#else
 
 #ifndef _POSIX_C_SOURCE
 #define _POSIX_C_SOURCE 200112L
@@ -66,12 +40,11 @@
 #include "toml/tomlc17.h"
 
 #include <assert.h>
-#include <errno.h>
 #include <poll.h> // poll() for multiplexing I/O
-#include <signal.h>
 #include <spawn.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>     // for strerror, strlen, strncpy, memset
@@ -585,6 +558,9 @@ toml_result_t fip_slave_load_config( //
 
 #ifdef FIP_IMPLEMENTATION
 
+#include <errno.h>
+#include <signal.h>
+
 const char *FIP_SOCKET_PATH = "/tmp/fip_socket";
 
 const char *fip_msg_type_str[] = {
@@ -1037,64 +1013,6 @@ void fip_create_hash(char hash[8], const char *file_path) {
         hash[i] = charset[pos_hash % charset_size];
         seed = pos_hash;
     }
-}
-
-bool is_alpha(char c) {
-    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
-}
-
-bool is_digit(char c) {
-    return c >= '0' && c <= '9';
-}
-
-bool is_alpha_num(char c) {
-    return is_alpha(c) || is_digit(c);
-}
-
-void fip_parse_sig_type(  //
-    fip_sig_type_t **sig, //
-    uint8_t *sig_len,     //
-    fip_type_enum_t type  //
-) {
-    uint32_t arg_id = *sig_len;
-    (*sig_len)++;
-    uint32_t new_size = sizeof(fip_sig_type_t) * *sig_len;
-    *sig = (fip_sig_type_t *)realloc(*sig, new_size);
-    (*sig)[arg_id].is_mutable = false;
-    (*sig)[arg_id].type = type;
-}
-
-bool fip_parse_type_string(       //
-    const uint32_t id,            //
-    const char *type_str,         //
-    const char *type_str_table[], //
-    size_t start_idx,             //
-    size_t end_idx,               //
-    fip_sig_type_t **sig,         //
-    uint8_t *sig_len              //
-) {
-    char arg_str[64] = {0};
-    // Remove all leading and trailing spaces
-    char c = *(type_str + end_idx - 1);
-    while (c == ' ' || c == '\t') {
-        end_idx--;
-        c = *(type_str + end_idx - 1);
-    }
-    c = *(type_str + start_idx);
-    while (c == ' ' || c == '\t') {
-        start_idx++;
-        c = *(type_str + start_idx);
-    }
-    strncpy(arg_str, type_str + start_idx, end_idx - start_idx);
-    for (uint8_t i = 0; i < FIP_TYPE_COUNT; i++) {
-        if (strcmp(arg_str, type_str_table[i]) == 0) {
-            fip_parse_sig_type(sig, sig_len, (fip_type_enum_t)i);
-            return true;
-        }
-    }
-    fip_print(id, "Unknown Type: '%s'", arg_str);
-    (*sig_len)--;
-    return false;
 }
 
 void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig) {
@@ -1582,5 +1500,3 @@ toml_result_t fip_slave_load_config( //
 #endif // End of #ifdef FIP_SLAVE
 
 #endif // End of #ifdef FIP_IMPLEMENTATION
-
-#endif // End of #ifndef NO_FIP_LIB
