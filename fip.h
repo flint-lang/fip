@@ -94,10 +94,8 @@ extern const char *FIP_SOCKET_PATH;
 #define FIP_TYPE_COUNT 12
 #define FIP_MAX_MODULE_NAME_LEN 32
 
-/// @typedef `fip_type_enum_t`
-/// @brief Enum of all possible FIP types
-///
-/// @note Only primitive types are supported for now
+/// @typedef `fip_type_prim_enum_t`
+/// @brief Enum of all possible primitive types supported by FIP
 typedef enum : uint8_t {
     FIP_U8 = 0, // unsigned char
     FIP_U16,    // unsigned short
@@ -110,8 +108,8 @@ typedef enum : uint8_t {
     FIP_F32,    // float
     FIP_F64,    // double
     FIP_BOOL,   // bool (byte)
-    FIP_STR,    // char*
-} fip_type_enum_t;
+    FIP_C_STR,  // char*
+} fip_type_prim_enum_t;
 
 /// @typedef `fip_msg_type_t`
 /// @bfief Enum of all possible messages the FIP can handle
@@ -145,26 +143,52 @@ typedef enum : uint8_t {
 extern const char *fip_msg_type_str[];
 
 /*
+ * ===============
+ * TYPE STRUCTURES
+ * ===============
+ */
+
+/// @brief Forward-Declaration of the `fip_type_t` struct type
+struct fip_type_t;
+
+/// @typedef `fip_type_ptr_t`
+/// @brief The struct representing a pointer type
+typedef struct {
+    struct fip_type_t *base_type;
+} fip_type_ptr_t;
+
+/// @typedef `fip_type_enum_t`
+/// @brief The enum containing all possible FIP types there are
+typedef enum {
+    FIP_TYPE_PRIMITIVE,
+    FIP_TYPE_PTR,
+} fip_type_enum_t;
+
+/// @typedef `fip_type_t`
+/// @brief The struct representing a type in FIP
+typedef struct fip_type_t {
+    fip_type_enum_t type;
+    bool is_mutable;
+    union {
+        fip_type_prim_enum_t prim;
+        fip_type_ptr_t ptr;
+    } u;
+} fip_type_t;
+
+/*
  * =================
  * SYMBOL STRUCTURES
  * =================
  */
-
-/// @typedef `fip_type_sig_t`
-/// @brief Struct representing the type signature of a FIP type
-typedef struct {
-    bool is_mutable;
-    fip_type_enum_t type;
-} fip_sig_type_t;
 
 /// @typedef `fip_fn_sig_t`
 /// @brief Struct representing the signature of a FIP-defined function
 typedef struct {
     char name[128];
     uint8_t args_len;
-    fip_sig_type_t *args;
+    fip_type_t *args;
     uint8_t rets_len;
-    fip_sig_type_t *rets;
+    fip_type_t *rets;
 } fip_sig_fn_t;
 
 /*
@@ -291,10 +315,16 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message);
 /// @param `message` Pointer to the message where the result is stored
 void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message);
 
+/// @function `fip_free_type`
+/// @brief Frees the given type
+///
+/// @param `type` The type to free
+void fip_free_type(fip_type_t *type);
+
 /// @function `fip_free_msg`
 /// @brief Frees a given message
 ///
-/// @param `message`
+/// @param `message` The message to free
 void fip_free_msg(fip_msg_t *message);
 
 /// @function `fip_create_hash`
@@ -325,7 +355,7 @@ bool fip_parse_type_string(       //
     const char *type_str_table[], //
     size_t start_idx,             //
     size_t end_idx,               //
-    fip_sig_type_t **sig,         //
+    fip_type_t **sig,             //
     uint8_t *sig_len              //
 );
 
@@ -620,6 +650,23 @@ void fip_print_msg(uint32_t id, [[maybe_unused]] const fip_msg_t *message) {
     fip_print(id, "TODO: fip_print_msg");
 }
 
+void fip_encode_type(          //
+    char buffer[FIP_MSG_SIZE], //
+    int *idx,                  //
+    const fip_type_t *type     //
+) {
+    buffer[(*idx)++] = (char)type->type;
+    buffer[(*idx)++] = (char)type->is_mutable;
+    switch (type->type) {
+        case FIP_TYPE_PRIMITIVE:
+            buffer[(*idx)++] = (char)type->u.prim;
+            break;
+        case FIP_TYPE_PTR:
+            fip_encode_type(buffer, idx, type->u.ptr.base_type);
+            break;
+    }
+}
+
 void fip_encode_sig_fn(        //
     char buffer[FIP_MSG_SIZE], //
     int *idx,                  //
@@ -636,12 +683,12 @@ void fip_encode_sig_fn(        //
     buffer[(*idx)++] = sig->args_len;
     for (uint8_t i = 0; i < sig->args_len; i++) {
         buffer[(*idx)++] = sig->args[i].is_mutable;
-        buffer[(*idx)++] = sig->args[i].type;
+        fip_encode_type(buffer, idx, &sig->args[i]);
     }
     buffer[(*idx)++] = sig->rets_len;
     for (uint8_t i = 0; i < sig->rets_len; i++) {
         buffer[(*idx)++] = sig->rets[i].is_mutable;
-        buffer[(*idx)++] = sig->rets[i].type;
+        fip_encode_type(buffer, idx, &sig->rets[i]);
     }
 }
 
@@ -724,6 +771,24 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
     }
 }
 
+void fip_decode_type(                //
+    const char buffer[FIP_MSG_SIZE], //
+    int *idx,                        //
+    fip_type_t *type                 //
+) {
+    type->type = (fip_type_enum_t)buffer[(*idx)++];
+    type->is_mutable = (bool)buffer[(*idx)++];
+    switch (type->type) {
+        case FIP_TYPE_PRIMITIVE:
+            type->u.prim = (fip_type_prim_enum_t)buffer[(*idx)++];
+            break;
+        case FIP_TYPE_PTR:
+            type->u.ptr.base_type = (fip_type_t *)malloc(sizeof(fip_type_t));
+            fip_decode_type(buffer, idx, type->u.ptr.base_type);
+            break;
+    }
+}
+
 void fip_decode_sig_fn(              //
     const char buffer[FIP_MSG_SIZE], //
     int *idx,                        //
@@ -739,24 +804,20 @@ void fip_decode_sig_fn(              //
     // because which function has more than 256 parameters or return types?
     sig->args_len = buffer[(*idx)++];
     if (sig->args_len > 0) {
-        sig->args = (fip_sig_type_t *)malloc(      //
-            sizeof(fip_sig_type_t) * sig->args_len //
-        );
+        sig->args = (fip_type_t *)malloc(sizeof(fip_type_t) * sig->args_len);
         for (uint8_t i = 0; i < sig->args_len; i++) {
             sig->args[i].is_mutable = buffer[(*idx)++];
-            sig->args[i].type = (fip_type_enum_t)buffer[(*idx)++];
+            fip_decode_type(buffer, idx, &sig->args[i]);
         }
     } else {
         sig->args = NULL;
     }
     sig->rets_len = buffer[(*idx)++];
     if (sig->rets_len > 0) {
-        sig->rets = (fip_sig_type_t *)malloc(      //
-            sizeof(fip_sig_type_t) * sig->rets_len //
-        );
+        sig->rets = (fip_type_t *)malloc(sizeof(fip_type_t) * sig->rets_len);
         for (uint8_t i = 0; i < sig->rets_len; i++) {
             sig->rets[i].is_mutable = buffer[(*idx)++];
-            sig->rets[i].type = (fip_type_enum_t)buffer[(*idx)++];
+            fip_decode_type(buffer, idx, &sig->rets[i]);
         }
     } else {
         sig->rets = NULL;
@@ -839,6 +900,17 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
     }
 }
 
+void fip_free_type(fip_type_t *type) {
+    switch (type->type) {
+        case FIP_TYPE_PRIMITIVE:
+            break;
+        case FIP_TYPE_PTR:
+            fip_free_type(type->u.ptr.base_type);
+            free(type->u.ptr.base_type);
+            break;
+    }
+}
+
 void fip_free_msg(fip_msg_t *message) {
     const fip_msg_type_t msg_type = message->type;
     message->type = FIP_MSG_UNKNOWN;
@@ -858,11 +930,19 @@ void fip_free_msg(fip_msg_t *message) {
                 case FIP_SYM_FUNCTION:
                     message->u.sym_req.type = FIP_SYM_UNKNOWN;
                     memset(message->u.sym_req.sig.fn.name, 0, 128);
-                    if (message->u.sym_req.sig.fn.args_len > 0) {
+                    uint8_t args_len = message->u.sym_req.sig.fn.args_len;
+                    if (args_len > 0) {
+                        for (uint8_t i = 0; i < args_len; i++) {
+                            fip_free_type(&message->u.sym_req.sig.fn.args[i]);
+                        }
                         free(message->u.sym_req.sig.fn.args);
                     }
                     message->u.sym_req.sig.fn.args_len = 0;
-                    if (message->u.sym_req.sig.fn.rets_len > 0) {
+                    uint8_t rets_len = message->u.sym_req.sig.fn.rets_len;
+                    if (rets_len > 0) {
+                        for (uint8_t i = 0; i < rets_len; i++) {
+                            fip_free_type(&message->u.sym_req.sig.fn.rets[i]);
+                        }
                         free(message->u.sym_req.sig.fn.rets);
                     }
                     message->u.sym_req.sig.fn.rets_len = 0;
@@ -882,11 +962,19 @@ void fip_free_msg(fip_msg_t *message) {
                 case FIP_SYM_FUNCTION:
                     message->u.sym_res.type = FIP_SYM_UNKNOWN;
                     memset(message->u.sym_res.sig.fn.name, 0, 128);
-                    if (message->u.sym_res.sig.fn.args_len > 0) {
+                    uint8_t args_len = message->u.sym_res.sig.fn.args_len;
+                    if (args_len > 0) {
+                        for (uint8_t i = 0; i < args_len; i++) {
+                            fip_free_type(&message->u.sym_res.sig.fn.args[i]);
+                        }
                         free(message->u.sym_res.sig.fn.args);
                     }
                     message->u.sym_res.sig.fn.args_len = 0;
+                    uint8_t rets_len = message->u.sym_res.sig.fn.rets_len;
                     if (message->u.sym_res.sig.fn.rets_len > 0) {
+                        for (uint8_t i = 0; i < rets_len; i++) {
+                            fip_free_type(&message->u.sym_res.sig.fn.rets[i]);
+                        }
                         free(message->u.sym_res.sig.fn.rets);
                     }
                     message->u.sym_res.sig.fn.rets_len = 0;
@@ -1013,21 +1101,23 @@ void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig) {
     fip_print(id, "  Function Signature:");
     fip_print(id, "    name: %s", sig->name);
     for (uint32_t i = 0; i < sig->args_len; i++) {
+        assert(sig->args[i].type == FIP_TYPE_PRIMITIVE);
         if (sig->args[i].is_mutable) {
             fip_print(id, "    arg[%u]: mut %s", i,
-                fip_type_names[sig->args[i].type]);
+                fip_type_names[sig->args[i].u.prim]);
         } else {
             fip_print(id, "    arg[%u]: const %s", i,
-                fip_type_names[sig->args[i].type]);
+                fip_type_names[sig->args[i].u.prim]);
         }
     }
     for (uint32_t i = 0; i < sig->rets_len; i++) {
+        assert(sig->rets[i].type == FIP_TYPE_PRIMITIVE);
         if (sig->rets[i].is_mutable) {
             fip_print(id, "    ret[%u]: mut %s", i,
-                fip_type_names[sig->rets[i].type]);
+                fip_type_names[sig->rets[i].u.prim]);
         } else {
             fip_print(id, "    ret[%u]: const %s", i,
-                fip_type_names[sig->rets[i].type]);
+                fip_type_names[sig->rets[i].u.prim]);
         }
     }
 }
@@ -1036,18 +1126,14 @@ void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
     memcpy(dest->name, src->name, 128);
     dest->args_len = src->args_len;
     if (src->args_len > 0) {
-        dest->args = (fip_sig_type_t *)malloc(     //
-            sizeof(fip_sig_type_t) * src->args_len //
-        );
+        dest->args = (fip_type_t *)malloc(sizeof(fip_type_t) * src->args_len);
         for (uint8_t i = 0; i < src->args_len; i++) {
             dest->args[i] = src->args[i];
         }
     }
     dest->rets_len = src->rets_len;
     if (src->rets_len > 0) {
-        dest->rets = (fip_sig_type_t *)malloc(     //
-            sizeof(fip_sig_type_t) * src->rets_len //
-        );
+        dest->rets = (fip_type_t *)malloc(sizeof(fip_type_t) * src->rets_len);
         for (uint8_t i = 0; i < src->rets_len; i++) {
             dest->rets[i] = src->rets[i];
         }
