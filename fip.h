@@ -130,11 +130,19 @@ typedef struct {
     struct fip_type_t *base_type;
 } fip_type_ptr_t;
 
+/// @typedef `fip_type_struct_t`
+/// @brief The struct representing a struct type
+typedef struct {
+    uint8_t field_count;
+    struct fip_type_t *fields;
+} fip_type_struct_t;
+
 /// @typedef `fip_type_enum_t`
 /// @brief The enum containing all possible FIP types there are
 typedef enum {
     FIP_TYPE_PRIMITIVE,
     FIP_TYPE_PTR,
+    FIP_TYPE_STRUCT,
 } fip_type_enum_t;
 
 /// @typedef `fip_type_t`
@@ -145,6 +153,7 @@ typedef struct fip_type_t {
     union {
         fip_type_prim_enum_t prim;
         fip_type_ptr_t ptr;
+        fip_type_struct_t struct_t;
     } u;
 } fip_type_t;
 
@@ -640,6 +649,12 @@ void fip_encode_type(          //
         case FIP_TYPE_PTR:
             fip_encode_type(buffer, idx, type->u.ptr.base_type);
             break;
+        case FIP_TYPE_STRUCT:
+            buffer[(*idx)++] = (char)type->u.struct_t.field_count;
+            for (uint8_t i = 0; i < type->u.struct_t.field_count; i++) {
+                fip_encode_type(buffer, idx, &type->u.struct_t.fields[i]);
+            }
+            break;
     }
 }
 
@@ -762,6 +777,17 @@ void fip_decode_type(                //
             type->u.ptr.base_type = (fip_type_t *)malloc(sizeof(fip_type_t));
             fip_decode_type(buffer, idx, type->u.ptr.base_type);
             break;
+        case FIP_TYPE_STRUCT:
+            type->u.struct_t.field_count = (uint8_t)buffer[(*idx)++];
+            if (type->u.struct_t.field_count > 0) {
+                type->u.struct_t.fields = (fip_type_t *)malloc(       //
+                    sizeof(fip_type_t) * type->u.struct_t.field_count //
+                );
+                for (uint8_t i = 0; i < type->u.struct_t.field_count; i++) {
+                    fip_decode_type(buffer, idx, &type->u.struct_t.fields[i]);
+                }
+            }
+            break;
     }
 }
 
@@ -883,6 +909,14 @@ void fip_free_type(fip_type_t *type) {
         case FIP_TYPE_PTR:
             fip_free_type(type->u.ptr.base_type);
             free(type->u.ptr.base_type);
+            break;
+        case FIP_TYPE_STRUCT:
+            if (type->u.struct_t.field_count > 0) {
+                for (uint8_t i = 0; i < type->u.struct_t.field_count; i++) {
+                    fip_free_type(&type->u.struct_t.fields[i]);
+                }
+                free(type->u.struct_t.fields);
+            }
             break;
     }
 }
