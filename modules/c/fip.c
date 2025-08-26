@@ -237,7 +237,7 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             if (pointee.kind == CXType_Char_S || pointee.kind == CXType_SChar) {
                 // char* -> treat as C string
                 fip_type->type = FIP_TYPE_PRIMITIVE;
-                fip_type->u.prim = FIP_C_STR;
+                fip_type->u.prim = FIP_STR;
                 return true;
             } else {
                 // Other pointer types
@@ -368,12 +368,18 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
 
     // Get return type
     CXType return_type = clang_getResultType(function_type);
-    fn_sig->rets_len = 1;
-    fn_sig->rets = malloc(sizeof(fip_type_t));
-    if (!clang_type_to_fip_type(return_type, &fn_sig->rets[0])) {
-        fip_print(ID, "Unsupported return type for function %s", fn_sig->name);
-        free(fn_sig->rets);
-        return false;
+    if (return_type.kind != CXType_Void) {
+        fn_sig->rets_len = 1;
+        fn_sig->rets = malloc(sizeof(fip_type_t));
+        if (!clang_type_to_fip_type(return_type, &fn_sig->rets[0])) {
+            fip_print(ID, "Unsupported return type for function %s",
+                fn_sig->name);
+            free(fn_sig->rets);
+            return false;
+        }
+    } else {
+        fn_sig->rets_len = 0;
+        fn_sig->rets = NULL;
     }
 
     // Get parameter count and types
