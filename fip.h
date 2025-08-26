@@ -630,7 +630,7 @@ const char *fip_type_names[] = {
     "f32",
     "f64",
     "bool",
-    "c_str",
+    "str",
 };
 
 void fip_print(                      //
