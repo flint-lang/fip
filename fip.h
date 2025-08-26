@@ -81,7 +81,7 @@ typedef enum : uint8_t {
     FIP_F32,    // float
     FIP_F64,    // double
     FIP_BOOL,   // bool (byte)
-    FIP_C_STR,  // char*
+    FIP_STR,    // char*
 } fip_type_prim_enum_t;
 
 /// @typedef `fip_msg_type_t`

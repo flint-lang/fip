@@ -106,6 +106,23 @@ int main() {
         goto kill;
     }
 
+    strncpy(msg.u.sym_req.sig.fn.name, "print_stuff", 11);
+    msg.u.sym_req.sig.fn.args_len = 1;
+    msg.u.sym_req.sig.fn.args = realloc(              //
+        msg.u.sym_req.sig.fn.args, sizeof(fip_type_t) //
+    );
+    msg.u.sym_req.sig.fn.args[0].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[0].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[0].u.prim = FIP_STR;
+    free(msg.u.sym_req.sig.fn.rets);
+    msg.u.sym_req.sig.fn.rets_len = 0;
+    // "print_stuff(str)"
+    nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
+    if (!fip_master_symbol_request(msg_buf, &msg)) {
+        fip_print(0, "Goto kill");
+        goto kill;
+    }
+
     // If we came here all definitions have been found in one of the interop
     // modules. This means that we now can request all modules to compile their
     // files and give us back the .o files as the responses
