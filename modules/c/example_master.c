@@ -1,4 +1,4 @@
-#define NO_FIP_LIB
+#define FIP_QUIET
 #define FIP_MASTER
 #define FIP_IMPLEMENTATION
 #include "fip.h"

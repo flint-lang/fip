@@ -614,7 +614,14 @@ const char *fip_type_names[] = {
     "c_str",
 };
 
-void fip_print(uint32_t id, const char *format, ...) {
+void fip_print(                          //
+    [[maybe_unused]] uint32_t id,        //
+    [[maybe_unused]] const char *format, //
+    ...                                  //
+) {
+#ifdef FIP_QUIET
+    return;
+#else
     if (!format) {
         return;
     }
@@ -643,6 +650,7 @@ void fip_print(uint32_t id, const char *format, ...) {
 
     // Add newline
     printf("\n");
+#endif
 }
 
 void fip_print_msg(uint32_t id, [[maybe_unused]] const fip_msg_t *message) {
