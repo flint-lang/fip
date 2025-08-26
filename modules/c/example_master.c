@@ -1,7 +1,9 @@
-#define FIP_QUIET
 #define FIP_MASTER
 #define FIP_IMPLEMENTATION
 #include "fip.h"
+
+fip_log_level_t LOG_LEVEL = FIP_TRACE;
+fip_master_state_t master_state = {0};
 
 #include <unistd.h>
 
@@ -11,7 +13,7 @@ int main() {
     // Initialize socket first
     int socket_fd = fip_master_init_socket();
     if (socket_fd == -1) {
-        fip_print(0, "Failed to initialize socket, exiting");
+        fip_print(0, FIP_ERROR, "Failed to initialize socket, exiting");
         return 1;
     }
 
@@ -30,17 +32,17 @@ int main() {
     // Start all enabled interop modules
     for (uint8_t i = 0; i < config_file.enabled_count; i++) {
         const char *mod = config_file.enabled_modules[i];
-        fip_print(0, "Starting the %s module...", mod);
+        fip_print(0, FIP_INFO, "Starting the %s module...", mod);
         char module_path[13 + FIP_MAX_MODULE_NAME_LEN] = {0};
         snprintf(module_path, sizeof(module_path), ".fip/modules/%s", mod);
         fip_spawn_interop_module(&interop_modules, module_path);
     }
 
     // Give the Interop Modules time to connect
-    fip_print(0, "Waiting for interop modules to connect...");
+    fip_print(0, FIP_INFO, "Waiting for interop modules to connect...");
     fip_master_accept_pending_connections(socket_fd);
     // Wait for all connect messages from the IMs
-    fip_print(0, "Waiting for all connect requests...");
+    fip_print(0, FIP_INFO, "Waiting for all connect requests...");
     fip_master_await_responses(       //
         msg_buf,                      //
         master_state.responses,       //
@@ -57,15 +59,21 @@ int main() {
             || req->version.minor != FIP_MINOR //
             || req->version.patch != FIP_PATCH //
         ) {
-            fip_print(0, "Version mismatch with module '%s'",
-                response->u.con_req.module_name);
-            fip_print(0, "  Expected 'v%d.%d.%d' but got 'v%d.%d.%d'",
-                FIP_MAJOR, FIP_MINOR, FIP_PATCH, req->version.major,
-                req->version.minor, req->version.patch);
+            fip_print(                                             //
+                0, FIP_ERROR, "Version mismatch with module '%s'", //
+                response->u.con_req.module_name                    //
+            );
+            fip_print(                                                     //
+                0, FIP_ERROR,                                              //
+                "  Expected 'v%d.%d.%d' but got 'v%d.%d.%d'",              //
+                FIP_MAJOR, FIP_MINOR, FIP_PATCH,                           //
+                req->version.major, req->version.minor, req->version.patch //
+            );
             goto kill;
         }
         if (!req->setup_ok) {
-            fip_print(0, "Module '%s' failed it's setup", req->module_name);
+            fip_print(0, FIP_ERROR, "Module '%s' failed it's setup",
+                req->module_name);
             close(master_state.client_fds[i]);
             master_state.client_fds[i] = -1;
             goto kill;
@@ -77,7 +85,7 @@ int main() {
     // we actually would not need to to the same as here.
     msg.type = FIP_MSG_SYMBOL_REQUEST;
     msg.u.sym_req.type = FIP_SYM_FUNCTION;
-    strncpy(msg.u.sym_req.sig.fn.name, "foo", 3);
+    strncpy(msg.u.sym_req.sig.fn.name, "bar", 3);
     msg.u.sym_req.sig.fn.rets_len = 1;
     msg.u.sym_req.sig.fn.rets = malloc(sizeof(fip_type_t));
     msg.u.sym_req.sig.fn.rets[0].is_mutable = true;
@@ -86,23 +94,23 @@ int main() {
     // "foo()->i32"
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
     if (!fip_master_symbol_request(msg_buf, &msg)) {
-        fip_print(0, "Goto kill");
+        fip_print(0, FIP_INFO, "Goto kill");
         goto kill;
     }
 
-    strncpy(msg.u.sym_req.sig.fn.name, "bar", 3);
+    strncpy(msg.u.sym_req.sig.fn.name, "foo", 3);
     msg.u.sym_req.sig.fn.args_len = 2;
     msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_type_t) * 2);
-    msg.u.sym_req.sig.fn.args[0].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[0].is_mutable = false;
     msg.u.sym_req.sig.fn.args[0].type = FIP_TYPE_PRIMITIVE;
     msg.u.sym_req.sig.fn.args[0].u.prim = FIP_I32;
-    msg.u.sym_req.sig.fn.args[1].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[1].is_mutable = false;
     msg.u.sym_req.sig.fn.args[1].type = FIP_TYPE_PRIMITIVE;
     msg.u.sym_req.sig.fn.args[1].u.prim = FIP_I32;
     // "bar(i32,i32)->i32"
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
     if (!fip_master_symbol_request(msg_buf, &msg)) {
-        fip_print(0, "Goto kill");
+        fip_print(0, FIP_INFO, "Goto kill");
         goto kill;
     }
 
@@ -119,7 +127,7 @@ int main() {
     // "print_stuff(str)"
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
     if (!fip_master_symbol_request(msg_buf, &msg)) {
-        fip_print(0, "Goto kill");
+        fip_print(0, FIP_INFO, "Goto kill");
         goto kill;
     }
 
@@ -129,7 +137,7 @@ int main() {
     fip_free_msg(&msg);
     msg.type = FIP_MSG_COMPILE_REQUEST;
     if (!fip_master_compile_request(msg_buf, &msg)) {
-        fip_print(0, "Goto kill");
+        fip_print(0, FIP_INFO, "Goto kill");
         goto kill;
     }
 
@@ -146,6 +154,6 @@ kill:
     fip_master_cleanup_socket(socket_fd);
     fip_terminate_all_slaves(&interop_modules); // Fallback cleanup
 
-    fip_print(0, "Master shutting down");
+    fip_print(0, FIP_INFO, "Master shutting down");
     return 0;
 }

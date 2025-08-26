@@ -1,7 +1,8 @@
-#define FIP_QUIET
 #define FIP_SLAVE
 #define FIP_IMPLEMENTATION
 #include "fip.h"
+
+fip_log_level_t LOG_LEVEL = FIP_INFO;
 
 #include <clang-c/Index.h>
 
@@ -77,7 +78,7 @@ bool parse_toml_file(toml_result_t toml) {
     // === COMPILER ===
     toml_datum_t compiler_d = toml_seek(toml.toptab, "compiler");
     if (compiler_d.type != TOML_STRING) {
-        fip_print(ID, "Missing 'compiler' field");
+        fip_print(ID, FIP_ERROR, "Missing 'compiler' field");
         return false;
     }
     const int compiler_len = compiler_d.u.str.len;
@@ -87,7 +88,7 @@ bool parse_toml_file(toml_result_t toml) {
     // === SOURCES ===
     toml_datum_t sources_d = toml_seek(toml.toptab, "sources");
     if (sources_d.type != TOML_ARRAY) {
-        fip_print(ID, "Missing 'sources' field");
+        fip_print(ID, FIP_ERROR, "Missing 'sources' field");
         return false;
     }
     int32_t arr_len = sources_d.u.arr.size;
@@ -96,7 +97,8 @@ bool parse_toml_file(toml_result_t toml) {
     CONFIG.sources_len = arr_len;
     for (int32_t i = 0; i < arr_len; i++) {
         if (sources_elems_d[i].type != TOML_STRING) {
-            fip_print(ID, "'sources' does contain a non-string value");
+            fip_print(ID, FIP_ERROR,
+                "'sources' does contain a non-string value");
             return false;
         }
         int32_t strlen = sources_elems_d[i].u.str.len;
@@ -112,7 +114,7 @@ bool parse_toml_file(toml_result_t toml) {
     // === COMPILE_FLAGS ===
     toml_datum_t compile_flags_d = toml_seek(toml.toptab, "compile_flags");
     if (compile_flags_d.type != TOML_ARRAY) {
-        fip_print(ID, "Missing 'compile_flags' field");
+        fip_print(ID, FIP_ERROR, "Missing 'compile_flags' field");
         return false;
     }
     arr_len = compile_flags_d.u.arr.size;
@@ -121,7 +123,8 @@ bool parse_toml_file(toml_result_t toml) {
     CONFIG.compile_flags_len = arr_len;
     for (int32_t i = 0; i < arr_len; i++) {
         if (compile_flags_elems_d[i].type != TOML_STRING) {
-            fip_print(ID, "'compile_flags' does contain a non-string value");
+            fip_print(ID, FIP_ERROR,
+                "'compile_flags' does contain a non-string value");
             return false;
         }
         int32_t strlen = compile_flags_elems_d[i].u.str.len;
@@ -163,7 +166,7 @@ enum CXChildVisitResult struct_field_visitor( //
         if (!clang_type_to_fip_type(                            //
                 field_type, &data->fields[data->current_index]) //
         ) {
-            fip_print(data->module_id,
+            fip_print(data->module_id, FIP_TRACE,
                 "Failed to convert field type at index %d",
                 data->current_index);
             return CXChildVisit_Break;
@@ -255,11 +258,12 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
 
             CXString elaborated_name = clang_getTypeSpelling(clang_type);
             CXString named_name = clang_getTypeSpelling(named_type);
-            fip_print(                                          //
-                ID, "Elaborated '%s' -> named '%s' (kind: %d)", //
-                clang_getCString(elaborated_name),              //
-                clang_getCString(named_name),                   //
-                named_type.kind                                 //
+            fip_print(                                      //
+                ID, FIP_TRACE,                              //
+                "Elaborated '%s' -> named '%s' (kind: %d)", //
+                clang_getCString(elaborated_name),          //
+                clang_getCString(named_name),               //
+                named_type.kind                             //
             );
             clang_disposeString(elaborated_name);
             clang_disposeString(named_name);
@@ -278,10 +282,11 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
 
             CXString typedef_name = clang_getTypeSpelling(clang_type);
             CXString canonical_name = clang_getTypeSpelling(canonical_type);
-            fip_print(                                //
-                ID, "Typedef '%s' -> canonical '%s'", //
-                clang_getCString(typedef_name),       //
-                clang_getCString(canonical_name)      //
+            fip_print(                            //
+                ID, FIP_TRACE,                    //
+                "Typedef '%s' -> canonical '%s'", //
+                clang_getCString(typedef_name),   //
+                clang_getCString(canonical_name)  //
             );
             clang_disposeString(typedef_name);
             clang_disposeString(canonical_name);
@@ -295,7 +300,7 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             }
         }
         case CXType_Record: { // CXType_Record represents structs/unions
-            fip_print(ID, "Processing struct/record type");
+            fip_print(ID, FIP_TRACE, "Processing struct/record type");
             fip_type->type = FIP_TYPE_STRUCT;
 
             // Get the struct declaration cursor
@@ -306,9 +311,10 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             clang_visitChildren(                                       //
                 type_cursor, count_struct_fields_visitor, &field_count //
             );
-            fip_print(ID, "Struct has %d fields", field_count);
+            fip_print(ID, FIP_TRACE, "Struct has %d fields", field_count);
             if (field_count <= 0 || field_count > 255) {
-                fip_print(ID, "Invalid struct field count: %d", field_count);
+                fip_print(ID, FIP_WARN, "Invalid struct field count: %d",
+                    field_count);
                 return false;
             }
 
@@ -331,26 +337,28 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
 
             // Check if we processed the expected number of fields
             if (visitor_data.current_index != field_count) {
-                fip_print(                                     //
-                    ID, "Processed %d fields but expected %d", //
-                    visitor_data.current_index, field_count    //
+                fip_print(                                               //
+                    ID, FIP_WARN, "Processed %d fields but expected %d", //
+                    visitor_data.current_index, field_count              //
                 );
                 free(fip_type->u.struct_t.fields);
                 return false;
             }
 
-            fip_print(ID, "Successfully processed struct with %d fields",
-                field_count);
+            fip_print(ID, FIP_TRACE,
+                "Successfully processed struct with %d fields", field_count);
             return true;
         }
         case CXType_Complex: {
             // TODO: Handle complex types if needed
-            fip_print(ID, "Complex types not yet supported");
+            fip_print(ID, FIP_ERROR, "Complex types not yet supported");
             return false;
         }
         case CXType_Void:
-            // Handle void return type - you might want to handle this
-            // differently
+            // Handle void return type. Void return types should never be
+            // reached at all, they must be detected before entering this
+            // function
+            assert(false);
             return false;
         default:
             return false;
@@ -372,7 +380,7 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
         fn_sig->rets_len = 1;
         fn_sig->rets = malloc(sizeof(fip_type_t));
         if (!clang_type_to_fip_type(return_type, &fn_sig->rets[0])) {
-            fip_print(ID, "Unsupported return type for function %s",
+            fip_print(ID, FIP_WARN, "Unsupported return type for function %s",
                 fn_sig->name);
             free(fn_sig->rets);
             return false;
@@ -385,8 +393,9 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
     // Get parameter count and types
     int num_args = clang_getNumArgTypes(function_type);
     if (num_args < 0) {
-        fip_print(                                                           //
-            ID, "Could not get argument count for function %s", fn_sig->name //
+        fip_print(                                                        //
+            ID, FIP_WARN, "Could not get argument count for function %s", //
+            fn_sig->name                                                  //
         );
         free(fn_sig->rets);
         return false;
@@ -398,8 +407,11 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
         for (int i = 0; i < num_args; i++) {
             CXType arg_type = clang_getArgType(function_type, i);
             if (!clang_type_to_fip_type(arg_type, &fn_sig->args[i])) {
-                fip_print(ID, "Unsupported argument type %d for function %s", i,
-                    fn_sig->name);
+                fip_print(                                          //
+                    ID, FIP_WARN,                                   //
+                    "Unsupported argument type %d for function %s", //
+                    i, fn_sig->name                                 //
+                );
                 free(fn_sig->args);
                 free(fn_sig->rets);
                 return false;
@@ -463,8 +475,9 @@ enum CXChildVisitResult visit_ast_node( //
         }
 
         if (symbol_count >= MAX_SYMBOLS) {
-            fip_print(                                                      //
-                ID, "Maximum symbols reached, skipping remaining functions" //
+            fip_print(                                                  //
+                ID, FIP_WARN,                                           //
+                "Maximum symbols reached, skipping remaining functions" //
             );
             return CXChildVisit_Break;
         }
@@ -480,8 +493,10 @@ enum CXChildVisitResult visit_ast_node( //
         if (extract_function_signature(cursor, &symbol.signature.fn)) {
             symbols[symbol_count] = symbol;
 
-            fip_print(ID, "Found extern function: '%s' at line %d",
-                symbol.signature.fn.name, symbol.line_number);
+            fip_print(                                                  //
+                ID, FIP_INFO, "Found extern function: '%s' at line %d", //
+                symbol.signature.fn.name, symbol.line_number            //
+            );
             fip_print_sig_fn(ID, &symbol.signature.fn);
 
             symbol_count++;
@@ -498,12 +513,14 @@ void parse_c_file(const char *c_file) {
     );
 
     if (unit == NULL) {
-        fip_print(ID, "Unable to parse file %s", c_file);
+        fip_print(ID, FIP_WARN, "Unable to parse file %s", c_file);
         return;
     }
 
-    fip_print(ID, "Scanning %s for extern functions with implementations...",
-        c_file);
+    fip_print(                                                             //
+        ID, FIP_INFO,                                                      //
+        "Scanning %s for extern functions with implementations...", c_file //
+    );
 
     CXCursor cursor = clang_getTranslationUnitCursor(unit);
     clang_visitChildren(cursor, visit_ast_node, (CXClientData)c_file);
@@ -511,7 +528,10 @@ void parse_c_file(const char *c_file) {
     clang_disposeTranslationUnit(unit);
     clang_disposeIndex(index);
 
-    fip_print(ID, "Found %d extern functions in %s", symbol_count, c_file);
+    fip_print(                                           //
+        ID, FIP_INFO, "Found %d extern functions in %s", //
+        symbol_count, c_file                             //
+    );
 }
 
 void handle_symbol_request(    //
@@ -519,7 +539,7 @@ void handle_symbol_request(    //
     const fip_msg_t *message   //
 ) {
     assert(message->u.sym_req.type == FIP_SYM_FUNCTION);
-    fip_print(ID, "Requested Function");
+    fip_print(ID, FIP_INFO, "Symbol Request Recieved");
     const fip_sig_fn_t *msg_fn = &message->u.sym_req.sig.fn;
     fip_print_sig_fn(ID, msg_fn);
     fip_msg_t response = {0};
@@ -583,7 +603,7 @@ bool compile_file(                                    //
     // Check if the hash is already part of the paths, if it is we already
     // compiled the file
     if (strstr(paths, hash)) {
-        fip_print(ID, "Hash '%.8s' already part of paths", hash);
+        fip_print(ID, FIP_INFO, "Hash '%.8s' already part of paths", hash);
         return true;
     }
 
@@ -616,10 +636,10 @@ bool compile_file(                                    //
     snprintf(compile_cmd, sizeof(compile_cmd), "%s -x c -c %s %s %s -o %s",
         CONFIG.compiler, compile_flags, defines, file_path, output_path);
 
-    fip_print(ID, "Executing: %s", compile_cmd);
+    fip_print(ID, FIP_INFO, "Executing: %s", compile_cmd);
 
     if (system(compile_cmd) == 0) {
-        fip_print(ID, "Compiled '%.8s' successfully", hash);
+        fip_print(ID, FIP_INFO, "Compiled '%.8s' successfully", hash);
         // Add to paths array. For this we need to find the first null-byte
         // character in the paths array, that's where we will place our hash at.
         // The good thing is that we only need to check multiples of 8 so this
@@ -631,9 +651,11 @@ bool compile_file(                                    //
             occupied_bytes += 8;
         }
         if (occupied_bytes >= FIP_PATHS_SIZE) {
-            fip_print(ID, "The Paths array is full: %.*s", FIP_PATHS_SIZE,
-                paths);
-            fip_print(ID, "Could not store hash '%s' in it", hash);
+            fip_print(                                          //
+                ID, FIP_ERROR, "The Paths array is full: %.*s", //
+                FIP_PATHS_SIZE, paths                           //
+            );
+            fip_print(ID, FIP_ERROR, "Could not store hash '%s' in it", hash);
             return false;
         }
         memcpy(dest, hash, 8);
@@ -648,7 +670,7 @@ void handle_compile_request(   //
     const fip_msg_t *message   //
 ) {
     assert(message->type == FIP_MSG_COMPILE_REQUEST);
-    fip_print(ID, "Handle Compile Request");
+    fip_print(ID, FIP_INFO, "Compile Request Recieved");
     fip_msg_t response = {0};
     response.type = FIP_MSG_OBJECT_RESPONSE;
     fip_msg_object_response_t *obj_res = &response.u.obj_res;
@@ -676,23 +698,29 @@ int main(int argc, char *argv[]) {
     if (argc < 2) {
         printf("The '%s' Interop Module needs at least one argument\n",
             MODULE_NAME);
-        printf("The argument must be the ID of the Interop Module\n");
+        printf("-- The first argument must be the ID of the Interop Module\n");
+        printf("-- The optional second argument is the log level of the IM\n");
+        printf("   If no log level (0-4) is provided it is set to 1 (INFO)\n");
         return 1;
     }
     char *id_str = argv[1];
     char *endptr;
     ID = (uint32_t)strtoul(id_str, &endptr, 10);
-    fip_print(ID, "starting...");
+    if (argc == 3) {
+        char *log_str = argv[2];
+        LOG_LEVEL = (fip_log_level_t)strtoul(log_str, &endptr, 10);
+    }
+    fip_print(ID, FIP_INFO, "starting...");
 
     char msg_buf[1024] = {0};
 
     // Connect to master's socket
     SOCKET_FD = fip_slave_init_socket();
     if (SOCKET_FD == -1) {
-        fip_print(ID, "Failed to connect to master socket");
+        fip_print(ID, FIP_ERROR, "Failed to connect to master socket");
         return 1;
     }
-    fip_print(ID, "Successfully connected to master socket");
+    fip_print(ID, FIP_INFO, "Successfully connected to master socket");
 
     fip_msg_t msg = {0};
     msg.type = FIP_MSG_CONNECT_REQUEST;
@@ -705,36 +733,44 @@ int main(int argc, char *argv[]) {
     // Parse the toml file for this module.
     toml_result_t toml = fip_slave_load_config(ID, MODULE_NAME);
     if (!parse_toml_file(toml)) {
-        fip_print(ID, "The %s.toml file could not be parsed", MODULE_NAME);
+        fip_print(                                                 //
+            ID, FIP_ERROR, "The %s.toml file could not be parsed", //
+            MODULE_NAME                                            //
+        );
         msg.u.con_req.setup_ok = false;
         toml_free(toml);
         goto send;
     }
     toml_free(toml);
     if (CONFIG.sources_len == 0) {
-        fip_print(ID, "The '%s' module does not have any sources declared",
-            MODULE_NAME);
+        fip_print(                                                            //
+            ID, FIP_ERROR,                                                    //
+            "The '%s' module does not have any sources declared", MODULE_NAME //
+        );
         goto send;
     }
-    fip_print(ID, "Parsed %s.toml file", MODULE_NAME);
+    fip_print(ID, FIP_INFO, "Parsed %s.toml file", MODULE_NAME);
 
 send:
     // Send the connect message to the master now, as we are now able to
     // connect to it
     if (!msg.u.con_req.setup_ok) {
-        fip_print(ID, "Sending shutdown request to master...");
+        fip_print(ID, FIP_INFO, "Sending shutdown request to master...");
         fip_slave_send_message(ID, SOCKET_FD, msg_buf, &msg);
         goto kill;
     }
-    fip_print(ID, "Sending connect request to master...");
+    fip_print(ID, FIP_INFO, "Sending connect request to master...");
     fip_slave_send_message(ID, SOCKET_FD, msg_buf, &msg);
 
     // Print all sources and all compile flags and parse all source files
     for (uint32_t i = 0; i < CONFIG.compile_flags_len; i++) {
-        fip_print(ID, "compile_flags[%u]: %s", i, CONFIG.compile_flags[i]);
+        fip_print(                                  //
+            ID, FIP_DEBUG, "compile_flags[%u]: %s", //
+            i, CONFIG.compile_flags[i]              //
+        );
     }
     for (uint32_t i = 0; i < CONFIG.sources_len; i++) {
-        fip_print(ID, "source[%u]: %s", i, CONFIG.sources[i]);
+        fip_print(ID, FIP_DEBUG, "source[%u]: %s", i, CONFIG.sources[i]);
         parse_c_file(CONFIG.sources[i]);
     }
 
@@ -746,20 +782,19 @@ send:
 
         if (fip_slave_receive_message(SOCKET_FD, msg_buf)) {
             // Only print the first time we receive a message
-            fip_print(ID, "Received message");
+            fip_print(ID, FIP_DEBUG, "Received message");
             fip_msg_t message = {0};
             fip_decode_msg(msg_buf, &message);
 
             switch (message.type) {
                 case FIP_MSG_UNKNOWN:
-                    fip_print(ID, "Recieved unknown message");
+                    fip_print(ID, FIP_WARN, "Recieved unknown message");
                     break;
                 case FIP_MSG_CONNECT_REQUEST:
                     // The slave should not recieve a message it sends
                     assert(false);
                     break;
                 case FIP_MSG_SYMBOL_REQUEST:
-                    fip_print(ID, "Symbol Request");
                     handle_symbol_request(msg_buf, &message);
                     break;
                 case FIP_MSG_SYMBOL_RESPONSE:
@@ -767,7 +802,6 @@ send:
                     assert(false);
                     break;
                 case FIP_MSG_COMPILE_REQUEST:
-                    fip_print(ID, "Compile Request");
                     handle_compile_request(msg_buf, &message);
                     break;
                 case FIP_MSG_OBJECT_RESPONSE:
@@ -775,7 +809,10 @@ send:
                     assert(false);
                     break;
                 case FIP_MSG_KILL:
-                    fip_print(ID, "Kill Command, shutting down");
+                    fip_print(                                    //
+                        ID, FIP_INFO,                             //
+                        "Recieved Kill Command, shutting down..." //
+                    );
                     is_running = false;
                     break;
             }
@@ -798,6 +835,6 @@ send:
 
 kill:
     fip_slave_cleanup_socket(SOCKET_FD);
-    fip_print(ID, "ending...");
+    fip_print(ID, FIP_INFO, "ending...");
     return 0;
 }
