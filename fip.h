@@ -401,6 +401,7 @@ typedef struct {
 } fip_master_state_t;
 
 typedef struct {
+    bool ok;
     char enabled_modules[FIP_MAX_ENABLED_MODULES][FIP_MAX_MODULE_NAME_LEN];
     uint8_t enabled_count;
 } fip_master_config_t;
@@ -1418,6 +1419,7 @@ fip_master_config_t fip_master_load_config() {
     const char *file_path = ".fip/config/fip.toml";
     FILE *fp = fopen(file_path, "r");
     fip_master_config_t config = {0};
+    config.ok = false;
     if (!fp) {
         fip_print(0, "Config file not found: %s", file_path);
         return config;
@@ -1474,6 +1476,7 @@ fip_master_config_t fip_master_load_config() {
 
     toml_free(toml);
     fip_print(0, "Found %d enabled modules", config.enabled_count);
+    config.ok = true;
     return config;
 }
 

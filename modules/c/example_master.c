@@ -18,11 +18,11 @@ int main() {
     // Create a buffer used for sending messages
     char msg_buf[FIP_MSG_SIZE] = {0};
 
-    // TODO: Change it to dynamically discovering the interop modules from the
-    // `.fip/modules` path
-
     // First parse the config file (fip.toml)
     fip_master_config_t config_file = fip_master_load_config();
+    if (!config_file.ok) {
+        goto kill;
+    }
 
     // Create a single message which will be re-used for all messages
     fip_msg_t msg = {0};
