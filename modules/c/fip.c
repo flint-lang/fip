@@ -514,8 +514,36 @@ enum CXChildVisitResult visit_ast_node( //
 
 void parse_c_file(const char *c_file) {
     CXIndex index = clang_createIndex(0, 0);
-    CXTranslationUnit unit = clang_parseTranslationUnit(        //
-        index, c_file, NULL, 0, NULL, 0, CXTranslationUnit_None //
+    FILE *fp = popen("gcc -print-file-name=include", "r");
+    char buf[512];
+    if (fgets(buf, sizeof(buf), fp)) {
+        buf[strcspn(buf, "\n")] = 0; // strip newline
+        // buf now holds the include path, e.g.
+        // "/usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/include"
+    }
+    pclose(fp);
+    const char *base_args[] = {
+        "-x",
+        "c",
+        "-std=gnu23",
+        "-I",
+        buf,
+    };
+    const int base_args_len = 5;
+    const int num_args = base_args_len + CONFIG.compile_flags_len;
+    const char **args = (const char **)malloc(sizeof(char *) * num_args);
+    for (int i = 0; i < base_args_len; i++) {
+        args[i] = base_args[i];
+    }
+    for (int i = 0; i < (int)CONFIG.compile_flags_len; i++) {
+        args[base_args_len + i] = CONFIG.compile_flags[i];
+    }
+    fip_print(ID, FIP_DEBUG, "Clang Parse Arguments:");
+    for (int i = 0; i < num_args; i++) {
+        fip_print(ID, FIP_DEBUG, "  %s", args[i]);
+    }
+    CXTranslationUnit unit = clang_parseTranslationUnit(               //
+        index, c_file, args, num_args, NULL, 0, CXTranslationUnit_None //
     );
 
     if (unit == NULL) {
