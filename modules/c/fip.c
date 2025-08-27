@@ -239,6 +239,7 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             CXType pointee = clang_getPointeeType(clang_type);
             if (pointee.kind == CXType_Char_S || pointee.kind == CXType_SChar) {
                 // char* -> treat as C string
+                fip_type->is_mutable = !clang_isConstQualifiedType(pointee);
                 fip_type->type = FIP_TYPE_PRIMITIVE;
                 fip_type->u.prim = FIP_STR;
                 return true;
@@ -246,9 +247,14 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
                 // Other pointer types
                 fip_type->type = FIP_TYPE_PTR;
                 fip_type->u.ptr.base_type = malloc(sizeof(fip_type_t));
-                return clang_type_to_fip_type(         //
-                    pointee, fip_type->u.ptr.base_type //
+                const bool success = clang_type_to_fip_type( //
+                    pointee, fip_type->u.ptr.base_type       //
                 );
+                if (success) {
+                    fip_type->is_mutable =
+                        fip_type->u.ptr.base_type->is_mutable;
+                }
+                return success;
             }
         }
         case CXType_Elaborated: {
