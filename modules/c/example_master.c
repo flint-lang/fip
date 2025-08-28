@@ -85,46 +85,29 @@ int main() {
     // we actually would not need to to the same as here.
     msg.type = FIP_MSG_SYMBOL_REQUEST;
     msg.u.sym_req.type = FIP_SYM_FUNCTION;
-    strncpy(msg.u.sym_req.sig.fn.name, "bar", 3);
-    msg.u.sym_req.sig.fn.rets_len = 1;
-    msg.u.sym_req.sig.fn.rets = malloc(sizeof(fip_type_t));
-    msg.u.sym_req.sig.fn.rets[0].is_mutable = true;
-    msg.u.sym_req.sig.fn.rets[0].type = FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.rets[0].u.prim = FIP_I32;
-    // "foo()->i32"
-    nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
-    if (!fip_master_symbol_request(msg_buf, &msg)) {
-        fip_print(0, FIP_INFO, "Goto kill");
-        goto kill;
-    }
-
-    strncpy(msg.u.sym_req.sig.fn.name, "foo", 3);
-    msg.u.sym_req.sig.fn.args_len = 2;
-    msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_type_t) * 2);
-    msg.u.sym_req.sig.fn.args[0].is_mutable = false;
-    msg.u.sym_req.sig.fn.args[0].type = FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.args[0].u.prim = FIP_I32;
-    msg.u.sym_req.sig.fn.args[1].is_mutable = false;
-    msg.u.sym_req.sig.fn.args[1].type = FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.args[1].u.prim = FIP_I32;
-    // "bar(i32,i32)->i32"
-    nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
-    if (!fip_master_symbol_request(msg_buf, &msg)) {
-        fip_print(0, FIP_INFO, "Goto kill");
-        goto kill;
-    }
-
-    strncpy(msg.u.sym_req.sig.fn.name, "print_stuff", 11);
-    msg.u.sym_req.sig.fn.args_len = 1;
-    msg.u.sym_req.sig.fn.args = realloc(              //
-        msg.u.sym_req.sig.fn.args, sizeof(fip_type_t) //
-    );
-    msg.u.sym_req.sig.fn.args[0].is_mutable = true;
-    msg.u.sym_req.sig.fn.args[0].type = FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.args[0].u.prim = FIP_STR;
-    free(msg.u.sym_req.sig.fn.rets);
+    strncpy(msg.u.sym_req.sig.fn.name, "ClearBackground", 15);
     msg.u.sym_req.sig.fn.rets_len = 0;
-    // "print_stuff(str)"
+    msg.u.sym_req.sig.fn.rets = NULL;
+    msg.u.sym_req.sig.fn.args_len = 1;
+    msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_type_t));
+    msg.u.sym_req.sig.fn.args[0].type = FIP_TYPE_STRUCT;
+    msg.u.sym_req.sig.fn.args[0].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.field_count = 4;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields =
+        malloc(sizeof(fip_type_t) * 4);
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[0].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[0].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[0].u.prim = FIP_U8;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[1].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[1].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[1].u.prim = FIP_U8;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[2].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[2].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[2].u.prim = FIP_U8;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[3].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[3].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[3].u.prim = FIP_U8;
+    // "ClearBackground(Color)"
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
     if (!fip_master_symbol_request(msg_buf, &msg)) {
         fip_print(0, FIP_INFO, "Goto kill");

@@ -27,6 +27,7 @@ fip_log_level_t LOG_LEVEL = FIP_INFO;
  */
 
 const char *c_type_names[] = {
+    "void",
     "unsigned char",
     "unsigned short",
     "unsigned int",
@@ -65,7 +66,7 @@ typedef struct {
     uint32_t module_id;
 } field_visitor_data;
 
-#define MAX_SYMBOLS 100
+#define MAX_SYMBOLS 1000
 #define MODULE_NAME "fip-c"
 
 fip_c_symbol_t symbols[MAX_SYMBOLS]; // Simple array for now
@@ -235,6 +236,10 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_BOOL;
             return true;
+        case CXType_Void:
+            fip_type->type = FIP_TYPE_PRIMITIVE;
+            fip_type->u.prim = FIP_VOID;
+            return true;
         case CXType_Pointer: {
             CXType pointee = clang_getPointeeType(clang_type);
             if (pointee.kind == CXType_Char_S || pointee.kind == CXType_SChar) {
@@ -360,12 +365,6 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             fip_print(ID, FIP_ERROR, "Complex types not yet supported");
             return false;
         }
-        case CXType_Void:
-            // Handle void return type. Void return types should never be
-            // reached at all, they must be detected before entering this
-            // function
-            assert(false);
-            return false;
         default:
             return false;
     }
@@ -462,6 +461,7 @@ enum CXChildVisitResult visit_ast_node( //
         // Get function name first to check if it's main
         CXString name = clang_getCursorSpelling(cursor);
         const char *name_cstr = clang_getCString(name);
+        fip_print(ID, FIP_TRACE, "Visit AST Node FunctionDecl: %s", name_cstr);
         // Skip main function
         if (strcmp(name_cstr, "main") == 0) {
             clang_disposeString(name);
@@ -472,11 +472,7 @@ enum CXChildVisitResult visit_ast_node( //
         // Check if function has external linkage
         enum CXLinkageKind linkage = clang_getCursorLinkage(cursor);
         if (linkage != CXLinkage_External) {
-            return CXChildVisit_Continue;
-        }
-
-        // Check if function has a body (is implemented, not just declared)
-        if (!clang_isCursorDefinition(cursor)) {
+            fip_print(ID, FIP_TRACE, "Has no external linkage");
             return CXChildVisit_Continue;
         }
 
@@ -637,7 +633,6 @@ bool compile_file(                                    //
     // Check if the hash is already part of the paths, if it is we already
     // compiled the file
     if (strstr(paths, hash)) {
-        fip_print(ID, FIP_INFO, "Hash '%.8s' already part of paths", hash);
         return true;
     }
 
@@ -713,7 +708,7 @@ void handle_compile_request(   //
 
     // We need to go through all symbols and see whether they need to be
     // compiled
-    for (uint8_t i = 0; i < symbol_count; i++) {
+    for (uint32_t i = 0; i < symbol_count; i++) {
         if (symbols[i].needed) {
             if (!compile_file(                                            //
                     obj_res->paths, symbols[i].source_file_path, message) //
