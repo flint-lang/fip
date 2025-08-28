@@ -603,7 +603,7 @@ void handle_symbol_request(    //
                 // We found the requested symbol
                 symbols[i].needed = true;
                 fip_clone_sig_fn(&sym_res->sig.fn, sym_fn);
-                snprintf(sym_res->sig.fn.name, 128, "__fip_c_%s", sym_fn->name);
+                memcpy(sym_res->sig.fn.name, sym_fn->name, 128);
                 break;
             }
         }
@@ -636,18 +636,6 @@ bool compile_file(                                    //
         return true;
     }
 
-    // Add all mangling definitions to prevent symbol collisions
-    char defines[1024] = {0};
-    strcat(defines, "-Dmain=__fip_c_main ");
-    for (uint32_t i = 0; i < symbol_count; i++) {
-        if (symbols[i].needed) {
-            char define_flag[64];
-            snprintf(define_flag, sizeof(define_flag), " -D%s=__fip_c_%s",
-                symbols[i].signature.fn.name, symbols[i].signature.fn.name);
-            strcat(defines, define_flag);
-        }
-    }
-
     // Build compile command with flags
     char compile_flags[1024] = {0};
     // Add all compile flags
@@ -662,8 +650,8 @@ bool compile_file(                                    //
     snprintf(output_path, sizeof(output_path), ".fip/cache/%.8s.o", hash);
 
     char compile_cmd[1024] = {0};
-    snprintf(compile_cmd, sizeof(compile_cmd), "%s -x c -c %s %s %s -o %s",
-        CONFIG.compiler, compile_flags, defines, file_path, output_path);
+    snprintf(compile_cmd, sizeof(compile_cmd), "%s -x c -c %s %s -o %s",
+        CONFIG.compiler, compile_flags, file_path, output_path);
 
     fip_print(ID, FIP_INFO, "Executing: %s", compile_cmd);
 
