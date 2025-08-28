@@ -70,18 +70,19 @@ extern const char *FIP_SOCKET_PATH;
 /// @typedef `fip_type_prim_enum_t`
 /// @brief Enum of all possible primitive types supported by FIP
 typedef enum : uint8_t {
-    FIP_U8 = 0, // unsigned char
-    FIP_U16,    // unsigned short
-    FIP_U32,    // unsigned int
-    FIP_U64,    // unsigned long
-    FIP_I8,     // char
-    FIP_I16,    // short
-    FIP_I32,    // int
-    FIP_I64,    // long
-    FIP_F32,    // float
-    FIP_F64,    // double
-    FIP_BOOL,   // bool (byte)
-    FIP_STR,    // char*
+    FIP_VOID = 0, // void
+    FIP_U8,       // unsigned char
+    FIP_U16,      // unsigned short
+    FIP_U32,      // unsigned int
+    FIP_U64,      // unsigned long
+    FIP_I8,       // char
+    FIP_I16,      // short
+    FIP_I32,      // int
+    FIP_I64,      // long
+    FIP_F32,      // float
+    FIP_F64,      // double
+    FIP_BOOL,     // bool (byte)
+    FIP_STR,      // char*
 } fip_type_prim_enum_t;
 
 /// @typedef `fip_msg_type_t`
@@ -619,6 +620,7 @@ const char *fip_msg_type_str[] = {
 /// @brief A small array where the value at each enum index is the name of the
 /// type at that enum value
 const char *fip_type_names[] = {
+    "void",
     "u8",
     "u16",
     "u32",

@@ -2,38 +2,46 @@
 #include <stddef.h>
 #include <stdio.h>
 
-typedef struct {
-    double x, y;
-} Vector2;
-
-Vector2 add_vectors_d(const Vector2 v1, const Vector2 v2) {
-    Vector2 result = {v1.x + v2.x, v1.y + v2.y};
-    return result;
+void InitWindow(int width, int height, const char *title) {
+    printf("Init Window\n");
+    printf("width: %i, height: %i, title: %s\n", width, height, title);
 }
 
-void print_stuff(const char *stuff) {
-    printf("%s\n", stuff);
+bool WindowShouldClose(void) {
+    printf("Window Should Close\n");
+    return false;
 }
 
-typedef struct {
-    float x;
-    float y;
-    float z;
-} Vector3;
-
-Vector3 add_vectors(const Vector3 v1, const Vector3 v2) {
-    Vector3 result = {v1.x + v2.x, v1.y + v2.y, v1.z + v2.z};
-    return result;
+void BeginDrawing(void) {
+    printf("Begin Drawing\n");
 }
 
-int foo(const int x, const int y) {
-    return x + y;
+typedef struct Color {
+    unsigned char r; // Color red value
+    unsigned char g; // Color green value
+    unsigned char b; // Color blue value
+    unsigned char a; // Color alpha value
+} Color;
+
+void ClearBackground(Color color) {
+    printf("Clear Background\n");
+    printf("color.(r, g, b, a): (%d, %d, %d, %d)\n", color.r, color.g, color.b,
+        color.a);
 }
 
-int bar() {
-    return 69;
+void DrawText(const char *text, int posX, int posY, int fontSize, Color color) {
+    printf("Draw Text\n");
+    printf("text: %s\n", text);
+    printf("pos: (%d, %d)\n", posX, posY);
+    printf("fontSize: %d\n", fontSize);
+    printf("color.(r, g, b, a): (%d, %d, %d, %d)\n", color.r, color.g, color.b,
+        color.a);
 }
 
-bool check() {
-    return true;
+void EndDrawing(void) {
+    printf("End Drawing\n");
+}
+
+void CloseWindow(void) {
+    printf("Close Window\n");
 }
