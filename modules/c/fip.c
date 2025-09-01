@@ -720,6 +720,10 @@ int main(int argc, char *argv[]) {
         printf("   If no log level (0-4) is provided it is set to 1 (INFO)\n");
         return 1;
     }
+    if (strcmp("--version", argv[1]) == 0) {
+        printf("fip-c version: v%d.%d.%d\n", FIP_MAJOR, FIP_MINOR, FIP_PATCH);
+        return 0;
+    }
     char *id_str = argv[1];
     char *endptr;
     ID = (uint32_t)strtoul(id_str, &endptr, 10);
