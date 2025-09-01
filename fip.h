@@ -60,9 +60,9 @@ extern const char *FIP_SOCKET_PATH;
 #define FIP_SLAVE_DELAY 1000000 // in nanoseconds
 
 // The version of the FIP
-#define FIP_MAJOR 1
-#define FIP_MINOR 0
-#define FIP_PATCH 0
+#define FIP_MAJOR 0
+#define FIP_MINOR 2
+#define FIP_PATCH 1
 
 #define FIP_TYPE_COUNT 12
 #define FIP_MAX_MODULE_NAME_LEN 32
