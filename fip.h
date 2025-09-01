@@ -39,18 +39,21 @@
 
 #include "toml/tomlc17.h"
 
-#include <assert.h>
+#ifndef __WIN32__
 #include <poll.h> // poll() for multiplexing I/O
 #include <spawn.h>
+#include <sys/select.h> // for select, FD_SET, etc.
+#include <sys/socket.h> // Socket creation, binding, listening
+#include <sys/un.h>     // Unix domain socket addresses
+#endif
+
+#include <assert.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>     // for strerror, strlen, strncpy, memset
-#include <sys/select.h> // for select, FD_SET, etc.
-#include <sys/socket.h> // Socket creation, binding, listening
-#include <sys/un.h>     // Unix domain socket addresses
+#include <string.h> // for strerror, strlen, strncpy, memset
 #include <time.h>
 #include <unistd.h> // close(), read(), write() system calls
 
@@ -1228,7 +1231,134 @@ void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
     }
 }
 
+/*
+ * ======================
+ * WINDOWS IMPLEMENTATION
+ * ======================
+ */
+
+#ifdef __WIN32__
+
+/*
+ * =============================
+ * WINDOWS MASTER IMPLEMENTATION
+ * =============================
+ */
+
 #ifdef FIP_MASTER
+
+bool fip_spawn_interop_module(      //
+    fip_interop_modules_t *modules, //
+    const char *module              //
+) {
+    return false;
+}
+
+void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
+    return;
+}
+
+int fip_master_init_socket() {
+    return 0;
+}
+
+void fip_master_accept_pending_connections(int socket_fd) {
+    return;
+}
+
+void fip_master_broadcast_message( //
+    char buffer[FIP_MSG_SIZE],     //
+    const fip_msg_t *message       //
+) {
+    return;
+}
+
+uint8_t fip_master_await_responses(        //
+    char buffer[FIP_MSG_SIZE],             //
+    fip_msg_t responses[FIP_MAX_SLAVES],   //
+    int *response_count,                   //
+    const fip_msg_type_t expected_msg_type //
+) {
+    return 0;
+}
+
+bool fip_master_symbol_request( //
+    char buffer[FIP_MSG_SIZE],  //
+    const fip_msg_t *message    //
+) {
+    return false;
+}
+
+bool fip_master_compile_request( //
+    char buffer[FIP_MSG_SIZE],   //
+    const fip_msg_t *message     //
+) {
+    return false;
+}
+
+void fip_master_cleanup_socket(int socket_fd) {
+    return;
+}
+
+fip_master_config_t fip_master_load_config() {
+    return {};
+}
+
+#endif // End of Windows MASTER Implementation
+
+/*
+ * ============================
+ * WINDOWS SLAVE IMPLEMENTATION
+ * ============================
+ */
+
+#ifdef FIP_SLAVE
+
+int fip_slave_init_socket() {
+    return 0;
+}
+
+bool fip_slave_receive_message(int socket_fd, char buffer[FIP_MSG_SIZE]) {
+    return false;
+}
+
+void fip_slave_send_message(   //
+    uint32_t id,               //
+    int socket_fd,             //
+    char buffer[FIP_MSG_SIZE], //
+    const fip_msg_t *message   //
+) {
+    return;
+}
+
+void fip_slave_cleanup_socket(int socket_fd) {
+    return;
+}
+
+toml_result_t fip_slave_load_config( //
+    const uint32_t id,               //
+    const char *module_name          //
+) {
+    return {};
+}
+
+#endif // End of Windows SLAVE Implemntation
+
+#else // End of Windows Implementation
+
+/*
+ * ====================
+ * LINUX IMPLEMENTATION
+ * ====================
+ */
+
+#ifdef FIP_MASTER
+
+/*
+ * ===========================
+ * LINUX MASTER IMPLEMENTATION
+ * ===========================
+ */
 
 bool fip_spawn_interop_module(      //
     fip_interop_modules_t *modules, //
@@ -1580,6 +1710,12 @@ fip_master_config_t fip_master_load_config() {
 
 #endif // End of #ifdef FIP_MASTER
 
+/*
+ * ==========================
+ * LINUX SLAVE IMPLEMENTATION
+ * ==========================
+ */
+
 #ifdef FIP_SLAVE
 
 int fip_slave_init_socket() {
@@ -1683,5 +1819,7 @@ toml_result_t fip_slave_load_config( //
 }
 
 #endif // End of #ifdef FIP_SLAVE
+
+#endif // End of #else (Linux Implementation)
 
 #endif // End of #ifdef FIP_IMPLEMENTATION
