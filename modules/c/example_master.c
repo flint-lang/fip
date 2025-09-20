@@ -10,13 +10,6 @@ fip_master_state_t master_state = {0};
 int main() {
     fip_interop_modules_t interop_modules = {0};
 
-    // Initialize socket first
-    int socket_fd = fip_master_init_socket();
-    if (socket_fd == -1) {
-        fip_print(0, FIP_ERROR, "Failed to initialize socket, exiting");
-        return 1;
-    }
-
     // Create a buffer used for sending messages
     char msg_buf[FIP_MSG_SIZE] = {0};
 
@@ -38,9 +31,12 @@ int main() {
         fip_spawn_interop_module(&interop_modules, module_path);
     }
 
-    // Give the Interop Modules time to connect
-    fip_print(0, FIP_INFO, "Waiting for interop modules to connect...");
-    fip_master_accept_pending_connections(socket_fd);
+    // Initialize master with the spawned modules
+    if (!fip_master_init(&interop_modules)) {
+        fip_print(0, FIP_ERROR, "Failed to initialize master, exiting");
+        goto kill;
+    }
+
     // Wait for all connect messages from the IMs
     fip_print(0, FIP_INFO, "Waiting for all connect requests...");
     fip_master_await_responses(       //
@@ -49,6 +45,7 @@ int main() {
         &master_state.response_count, //
         FIP_MSG_CONNECT_REQUEST       //
     );
+
     // Check if each interop module has the correct version and whether it's
     // setup was ok
     for (uint8_t i = 0; i < master_state.response_count; i++) {
@@ -74,8 +71,6 @@ int main() {
         if (!req->setup_ok) {
             fip_print(0, FIP_ERROR, "Module '%s' failed it's setup",
                 req->module_name);
-            close(master_state.client_fds[i]);
-            master_state.client_fds[i] = -1;
             goto kill;
         }
     }
@@ -108,7 +103,6 @@ int main() {
     msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[3].is_mutable = true;
     msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[3].u.prim = FIP_U8;
     // "ClearBackground(Color)"
-    nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
     if (!fip_master_symbol_request(msg_buf, &msg)) {
         fip_print(0, FIP_INFO, "Goto kill");
         goto kill;
@@ -129,12 +123,11 @@ kill:
     fip_free_msg(&msg);
     msg.type = FIP_MSG_KILL;
     msg.u.kill.reason = FIP_KILL_FINISH;
-    nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 10000000}, NULL);
     fip_master_broadcast_message(msg_buf, &msg);
 
     // Clean up
     nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 100000000}, NULL);
-    fip_master_cleanup_socket(socket_fd);
+    fip_master_cleanup();
     fip_terminate_all_slaves(&interop_modules); // Fallback cleanup
 
     fip_print(0, FIP_INFO, "Master shutting down");

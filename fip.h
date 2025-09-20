@@ -40,24 +40,22 @@
 #include "toml/tomlc17.h"
 
 #ifndef __WIN32__
-#include <poll.h> // poll() for multiplexing I/O
 #include <spawn.h>
-#include <sys/select.h> // for select, FD_SET, etc.
-#include <sys/socket.h> // Socket creation, binding, listening
-#include <sys/un.h>     // Unix domain socket addresses
 #endif
 
 #include <assert.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h> // for strerror, strlen, strncpy, memset
+#include <string.h>
 #include <time.h>
-#include <unistd.h> // close(), read(), write() system calls
+#include <unistd.h>
 
-extern const char *FIP_SOCKET_PATH;
 #define FIP_MAX_SLAVES 64
 #define FIP_MSG_SIZE 1024
 #define FIP_SLAVE_DELAY 1000000 // in nanoseconds
@@ -416,11 +414,11 @@ typedef struct {
 } fip_interop_modules_t;
 
 typedef struct {
-    int server_fd;
-    int client_fds[FIP_MAX_SLAVES];
-    int client_count;
+    FILE *slave_stdin[FIP_MAX_SLAVES];
+    FILE *slave_stdout[FIP_MAX_SLAVES];
+    uint32_t slave_count;
     fip_msg_t responses[FIP_MAX_SLAVES];
-    int response_count;
+    uint32_t response_count;
 } fip_master_state_t;
 
 typedef struct {
@@ -451,34 +449,26 @@ bool fip_spawn_interop_module(      //
 /// @param `modules` A pointer to the structure containing all the module PIDs
 void fip_terminate_all_slaves(fip_interop_modules_t *modules);
 
-/// @function `fip_master_init_socket`
-/// @brief Initializes the socket which is used by all slaves to send messages
-/// to and to recieve messages from the master
+/// @function `fip_master_init`
+/// @brief Initializes the master for stdio-based communication
 ///
-/// @return `int` The file descriptor id of the created socket
-int fip_master_init_socket();
-
-/// @function `fip_master_accept_pending_connections`
-/// @brief Checks for any pending connections and connects to them, this is
-/// needed to check whether a new connection tries to be established
-///
-/// @param `socket_fd` The socket file descriptor to check the new connections
-/// at
-void fip_master_accept_pending_connections(int socket_fd);
+/// @param `modules` The interop modules structure containing slave PIDs
+/// @return `bool` Whether initialization was successful
+bool fip_master_init(fip_interop_modules_t *modules);
 
 /// @function `fip_master_broadcast_message`
-/// @brief Broadcasts a given message to all connected slaves
+/// @brief Broadcasts a given message to stdout
 ///
 /// @param `buffer` The buffer in which the message will be encoded before
 /// sending it
-/// @param `message` The message to send to the socket
+/// @param `message` The message to send
 void fip_master_broadcast_message( //
     char buffer[FIP_MSG_SIZE],     //
     const fip_msg_t *message       //
 );
 
 /// @function `fip_master_await_responses`
-/// @brief Waits for all slaves to respond with a message
+/// @brief Waits for all slaves to respond with a message from stdin
 ///
 /// @param `buffer` The buffer in which the recieved messages will be stored
 /// temporarily
@@ -491,19 +481,19 @@ void fip_master_broadcast_message( //
 uint8_t fip_master_await_responses(        //
     char buffer[FIP_MSG_SIZE],             //
     fip_msg_t responses[FIP_MAX_SLAVES],   //
-    int *response_count,                   //
+    uint32_t *response_count,              //
     const fip_msg_type_t expected_msg_type //
 );
 
 /// @function `fip_master_symbol_request`
-/// @brief Broadcasts a symbol request message to all slaves and then awaits all
-/// symbol response messages from all slaves and returns whether the requested
+/// @brief Broadcasts a symbol request message and then awaits all
+/// symbol response messages and returns whether the requested
 /// symbol was found
 ///
 /// @param `buffer` The buffer in which the to-be-sent message and the recieved
 /// messages will be stored in
-/// @param `message` The symbol request message to send to all slaves
-/// @return `bool` Whether the requested symbol was found in any of the slaves
+/// @param `message` The symbol request message to send
+/// @return `bool` Whether the requested symbol was found
 ///
 /// @note This function asserts the message type to be FIP_MSG_SYMBOL_REQUEST
 bool fip_master_symbol_request( //
@@ -512,13 +502,13 @@ bool fip_master_symbol_request( //
 );
 
 /// @function `fip_master_compile_request`
-/// @brief Broadcasts a compile request message to all slaves and then awaits
-/// all object response messages from all slaves and returns whether all modules
+/// @brief Broadcasts a compile request message and then awaits
+/// all object response messages and returns whether all modules
 /// were able to compile their sources
 ///
 /// @param `buffer` The buffer in which the to-be-sent message and the recieved
 /// messages will be stored in
-/// @param `message` The compile request message to send to all slaves
+/// @param `message` The compile request message to send
 /// @return `bool` Whether all interop modules were able to compile their
 /// source files
 ///
@@ -528,11 +518,9 @@ bool fip_master_compile_request( //
     const fip_msg_t *message     //
 );
 
-/// @function `fip_master_cleanup_socket`
-/// @brief Cleans up the socket before terminating the master
-///
-/// @param `socked_fd` The file descriptor of the socket to clean up
-void fip_master_cleanup_socket(int socket_fd);
+/// @function `fip_master_cleanup`
+/// @brief Cleans up the master
+void fip_master_cleanup();
 
 /// @function `fip_master_load_config`
 /// @brief Loads the master config from the `.fip/config/fip.toml` file
@@ -550,44 +538,38 @@ fip_master_config_t fip_master_load_config();
  * ===================
  */
 
-/// @function `fip_slave_init_socket`
-/// @brief Tries to connect to the master's socket and returns the file
-/// descirptor of the master socket
+/// @function `fip_slave_init`
+/// @brief Initializes the slave for stdio-based communication with named pipes
 ///
-/// @return `int` The file descriptor id of the master's created socket
-int fip_slave_init_socket();
+/// @param `slave_id` The ID of this slave process
+/// @return `bool` Whether initialization was successful
+bool fip_slave_init(uint32_t slave_id);
 
 /// @function `fip_slave_recieve_message`
-/// @brief Checks whether a message has been sent and stores the sent
-/// message in the buffer
+/// @brief Reads a message from stdin and stores it in the buffer
 ///
-/// @param `socket_fd` The file descriptor id to recieve the message from
 /// @param `buffer` The buffer where to store the recieved message at
 /// @return `bool` Whether a message was recieved
-bool fip_slave_receive_message(int socket_fd, char buffer[FIP_MSG_SIZE]);
+bool fip_slave_receive_message(char buffer[FIP_MSG_SIZE]);
 
 /// @function `fip_slave_send_message`
-/// @brief Sends a message to the socked file descriptor
+/// @brief Sends a message to stdout
 ///
 /// @param `id` The id of the slave who tries to send the message
-/// @param `socket_fd` The file descriptor to send the message to
 /// @param `buffer` The buffer in which the message to send will be stored
 /// @param `message` The message which will be sent
 void fip_slave_send_message(   //
     uint32_t id,               //
-    int socket_fd,             //
     char buffer[FIP_MSG_SIZE], //
     const fip_msg_t *message   //
 );
 
-/// @function `fip_slave_cleanup_socket`
-/// @brief Cleans up the socket connection to the master's socket
-///
-/// @param `socket_fd` The socket file descriptor to clean up
-void fip_slave_cleanup_socket(int socket_fd);
+/// @function `fip_slave_cleanup`
+/// @brief Cleans up the slave
+void fip_slave_cleanup();
 
 /// @function `fip_slave_load_config`
-/// @brief Loads the master config from the `.fip/config/X.toml` where `X` is
+/// @brief Loads the slave config from the `.fip/config/X.toml` where `X` is
 /// the name of the module (for example `fip-c`)
 ///
 /// @param `id` The ID of the slave that tries to load the config
@@ -605,9 +587,11 @@ toml_result_t fip_slave_load_config( //
 #ifdef FIP_IMPLEMENTATION
 
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
-
-const char *FIP_SOCKET_PATH = "/tmp/fip_socket";
+#include <sys/select.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 const char *fip_msg_type_str[] = {
     "FIP_MSG_UNKNOWN",
@@ -721,16 +705,17 @@ void fip_print(                      //
         }
     }
 
-    // Print prefix first
-    printf("%s", prefix);
+    // Print prefix first to stderr
+    fprintf(stderr, "%s", prefix);
 
-    // Print the formatted message
+    // Print the formatted message to stderr
     va_start(args, format);
-    vprintf(format, args);
+    vfprintf(stderr, format, args);
     va_end(args);
 
-    // Add newline
-    printf("\n");
+    // Add newline to stderr
+    fprintf(stderr, "\n");
+    fflush(stderr);
 }
 
 void fip_print_msg(uint32_t id, [[maybe_unused]] const fip_msg_t *message) {
@@ -739,7 +724,7 @@ void fip_print_msg(uint32_t id, [[maybe_unused]] const fip_msg_t *message) {
 
 void fip_encode_type(          //
     char buffer[FIP_MSG_SIZE], //
-    int *idx,                  //
+    uint32_t *idx,             //
     const fip_type_t *type     //
 ) {
     buffer[(*idx)++] = (char)type->type;
@@ -762,7 +747,7 @@ void fip_encode_type(          //
 
 void fip_encode_sig_fn(        //
     char buffer[FIP_MSG_SIZE], //
-    int *idx,                  //
+    uint32_t *idx,             //
     const fip_sig_fn_t *sig    //
 ) {
     // Because the name is a known size of 128 bytes we can store it directly in
@@ -788,8 +773,12 @@ void fip_encode_sig_fn(        //
 void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
     // Clear the buffer
     memset(buffer, 0, FIP_MSG_SIZE);
+    // The message always starts with the length of the message as a 4 byte
+    // uint32_teger and then the actual message follows. This is why the
+    // 'idx' starts at 4, since the first 4 bytes need to be filled with the
+    // size of the message itself
     // The first character in the buffer is the message type
-    int idx = 0;
+    uint32_t idx = 4;
     buffer[idx++] = message->type;
     switch (message->type) {
         case FIP_MSG_UNKNOWN:
@@ -862,11 +851,12 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             buffer[idx++] = message->u.kill.reason;
             break;
     }
+    *(uint32_t *)(&buffer[0]) = idx - 4;
 }
 
 void fip_decode_type(                //
     const char buffer[FIP_MSG_SIZE], //
-    int *idx,                        //
+    uint32_t *idx,                   //
     fip_type_t *type                 //
 ) {
     type->type = (fip_type_enum_t)buffer[(*idx)++];
@@ -895,7 +885,7 @@ void fip_decode_type(                //
 
 void fip_decode_sig_fn(              //
     const char buffer[FIP_MSG_SIZE], //
-    int *idx,                        //
+    uint32_t *idx,                   //
     fip_sig_fn_t *sig                //
 ) {
     // Because the name is a known size of 128 bytes we can store it directly in
@@ -930,7 +920,7 @@ void fip_decode_sig_fn(              //
 
 void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
     // The first character in the buffer is the message type
-    int idx = 0;
+    uint32_t idx = 0;
     message->type = (fip_msg_type_t)buffer[idx++];
     switch (message->type) {
         case FIP_MSG_UNKNOWN:
@@ -1258,12 +1248,8 @@ void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
     return;
 }
 
-int fip_master_init_socket() {
-    return 0;
-}
-
-void fip_master_accept_pending_connections(int socket_fd) {
-    return;
+bool fip_master_init(fip_interop_modules_t *modules) {
+    return true;
 }
 
 void fip_master_broadcast_message( //
@@ -1276,7 +1262,7 @@ void fip_master_broadcast_message( //
 uint8_t fip_master_await_responses(        //
     char buffer[FIP_MSG_SIZE],             //
     fip_msg_t responses[FIP_MAX_SLAVES],   //
-    int *response_count,                   //
+    uint32_t *response_count,              //
     const fip_msg_type_t expected_msg_type //
 ) {
     return 0;
@@ -1296,12 +1282,13 @@ bool fip_master_compile_request( //
     return false;
 }
 
-void fip_master_cleanup_socket(int socket_fd) {
+void fip_master_cleanup() {
     return;
 }
 
 fip_master_config_t fip_master_load_config() {
-    return {};
+    fip_master_config_t config = {0};
+    return config;
 }
 
 #endif // End of Windows MASTER Implementation
@@ -1314,24 +1301,23 @@ fip_master_config_t fip_master_load_config() {
 
 #ifdef FIP_SLAVE
 
-int fip_slave_init_socket() {
-    return 0;
+bool fip_slave_init(uint32_t slave_id) {
+    return true;
 }
 
-bool fip_slave_receive_message(int socket_fd, char buffer[FIP_MSG_SIZE]) {
+bool fip_slave_receive_message(char buffer[FIP_MSG_SIZE]) {
     return false;
 }
 
 void fip_slave_send_message(   //
     uint32_t id,               //
-    int socket_fd,             //
     char buffer[FIP_MSG_SIZE], //
     const fip_msg_t *message   //
 ) {
     return;
 }
 
-void fip_slave_cleanup_socket(int socket_fd) {
+void fip_slave_cleanup() {
     return;
 }
 
@@ -1339,7 +1325,8 @@ toml_result_t fip_slave_load_config( //
     const uint32_t id,               //
     const char *module_name          //
 ) {
-    return {};
+    toml_result_t toml = {0};
+    return toml;
 }
 
 #endif // End of Windows SLAVE Implemntation
@@ -1374,9 +1361,28 @@ bool fip_spawn_interop_module(      //
 
     fip_print(0, FIP_INFO, "Spawning slave %s...", id);
 
-    // Create file actions to ensure stdout inheritance
+    // Create pipes for communication with slave
+    int stdin_pipe[2];  // master writes to stdin_pipe[1], slave reads from
+                        // stdin_pipe[0]
+    int stdout_pipe[2]; // slave writes to stdout_pipe[1], master reads from
+                        // stdout_pipe[0]
+
+    if (pipe(stdin_pipe) == -1 || pipe(stdout_pipe) == -1) {
+        fip_print(0, FIP_ERROR, "Failed to create pipes for slave %s", id);
+        return false;
+    }
+
+    // Create file actions to redirect slave's stdin/stdout to our pipes
     posix_spawn_file_actions_t actions;
     posix_spawn_file_actions_init(&actions);
+
+    // Redirect slave's stdin to read from our stdin_pipe
+    posix_spawn_file_actions_adddup2(&actions, stdin_pipe[0], STDIN_FILENO);
+    posix_spawn_file_actions_addclose(&actions, stdin_pipe[1]);
+
+    // Redirect slave's stdout to write to our stdout_pipe
+    posix_spawn_file_actions_adddup2(&actions, stdout_pipe[1], STDOUT_FILENO);
+    posix_spawn_file_actions_addclose(&actions, stdout_pipe[0]);
 
     int status = posix_spawn(&modules->pids[modules->active_count], _module,
         &actions, // Use file actions
@@ -1387,6 +1393,28 @@ bool fip_spawn_interop_module(      //
 
     if (status != 0) {
         fip_print(0, FIP_WARN, "Failed to spawn slave %s: %d", id, status);
+        close(stdin_pipe[0]);
+        close(stdin_pipe[1]);
+        close(stdout_pipe[0]);
+        close(stdout_pipe[1]);
+        return false;
+    }
+
+    // Close slave's ends of the pipes (they're now handled by the spawned
+    // process)
+    close(stdin_pipe[0]);
+    close(stdout_pipe[1]);
+
+    // Store master's ends of the pipes
+    master_state.slave_stdin[modules->active_count] =
+        fdopen(stdin_pipe[1], "w");
+    master_state.slave_stdout[modules->active_count] =
+        fdopen(stdout_pipe[0], "r");
+
+    if (!master_state.slave_stdin[modules->active_count] ||
+        !master_state.slave_stdout[modules->active_count]) {
+        fip_print(0, FIP_ERROR, "Failed to create FILE streams for slave %s",
+            id);
         return false;
     }
 
@@ -1406,77 +1434,15 @@ void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
     }
 }
 
-int fip_master_init_socket() {
-    int server_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (server_fd == -1) {
-        fip_print(0, FIP_ERROR, "Failed to create socket: %s", strerror(errno));
-        return -1;
-    }
+bool fip_master_init(fip_interop_modules_t *modules) {
+    // Initialize master state
+    master_state.slave_count = modules->active_count;
+    master_state.response_count = 0;
 
-    // Remove existing socket file if it exists
-    unlink(FIP_SOCKET_PATH);
-
-    // Set up socket address
-    struct sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, FIP_SOCKET_PATH, sizeof(addr.sun_path) - 1);
-
-    // Bind socket to path
-    if (bind(server_fd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        fip_print(0, FIP_ERROR, "Failed to bind socket: %s", strerror(errno));
-        close(server_fd);
-        return -1;
-    }
-
-    // Start listening (allow up to FIP_MAX_SLAVES connections)
-    if (listen(server_fd, FIP_MAX_SLAVES) == -1) {
-        fip_print(0, FIP_ERROR, "Failed to listen on socket: %s",
-            strerror(errno));
-        close(server_fd);
-        unlink(FIP_SOCKET_PATH);
-        return -1;
-    }
-
-    // Initialize client array
-    for (int i = 0; i < FIP_MAX_SLAVES; i++) {
-        master_state.client_fds[i] = -1;
-    }
-    master_state.server_fd = server_fd;
-    master_state.client_count = 0;
-
-    fip_print(0, FIP_INFO, "Socket initialized and listening on %s",
-        FIP_SOCKET_PATH);
-    return server_fd;
-}
-
-void fip_master_accept_pending_connections(int socket_fd) {
-    fd_set read_fds;
-    struct timeval timeout;
-
-    while (master_state.client_count < FIP_MAX_SLAVES) {
-        FD_ZERO(&read_fds);
-        FD_SET(socket_fd, &read_fds);
-
-        timeout.tv_sec = 0;       // Non-blocking
-        timeout.tv_usec = 100000; // 100ms timeout
-
-        int activity = select(socket_fd + 1, &read_fds, NULL, NULL, &timeout);
-
-        if (activity <= 0) {
-            break; // No more pending connections
-        }
-
-        if (FD_ISSET(socket_fd, &read_fds)) {
-            int client_fd = accept(socket_fd, NULL, NULL);
-            if (client_fd != -1) {
-                master_state.client_fds[master_state.client_count] = client_fd;
-                master_state.client_count++;
-                fip_print(0, FIP_INFO, "Accepted connection from slave %d",
-                    master_state.client_count);
-            }
-        }
-    }
+    fip_print(0, FIP_INFO,
+        "Master initialized for stdio communication with %d slaves",
+        master_state.slave_count);
+    return true;
 }
 
 void fip_master_broadcast_message( //
@@ -1484,20 +1450,27 @@ void fip_master_broadcast_message( //
     const fip_msg_t *message       //
 ) {
     fip_print(0, FIP_INFO, "Broadcasting message to %d slaves",
-        master_state.client_count);
+        master_state.slave_count);
     fip_encode_msg(buffer, message);
 
-    // Send to all connected clients
-    for (int i = 0; i < master_state.client_count; i++) {
-        if (master_state.client_fds[i] != -1) {
-            ssize_t sent =
-                send(master_state.client_fds[i], buffer, FIP_MSG_SIZE, 0);
-            if (sent == -1) {
-                fip_print(0, FIP_WARN, "Failed to send to slave %d", i + 1);
-                // Optionally remove this client from the array
-                close(master_state.client_fds[i]);
-                master_state.client_fds[i] = -1;
+    // Get the message length from the first 4 bytes
+    uint32_t msg_len = *(uint32_t *)buffer;
+
+    // Send to each slave individually
+    for (uint32_t i = 0; i < master_state.slave_count; i++) {
+        if (master_state.slave_stdin[i]) {
+            // Just write the whole buffer to the slaves stdin
+            size_t written_bytes = fwrite(                          //
+                buffer, 1, msg_len + 4, master_state.slave_stdin[i] //
+            );
+            if (written_bytes != (msg_len + 4)) {
+                fip_print(0, FIP_WARN, "Failed to write message to slave %d",
+                    i + 1);
+                continue;
             }
+
+            fflush(master_state.slave_stdin[i]);
+            fip_print(0, FIP_DEBUG, "Sent message to slave %d", i + 1);
         }
     }
 }
@@ -1505,56 +1478,88 @@ void fip_master_broadcast_message( //
 uint8_t fip_master_await_responses(        //
     char buffer[FIP_MSG_SIZE],             //
     fip_msg_t responses[FIP_MAX_SLAVES],   //
-    int *response_count,                   //
+    uint32_t *response_count,              //
     const fip_msg_type_t expected_msg_type //
 ) {
     fip_print(0, FIP_INFO, "Awaiting Responses");
+
     // First we need to clear all old message responses
     for (uint8_t i = 0; i < *response_count; i++) {
         fip_free_msg(&responses[i]);
     }
     *response_count = 0;
-
-    // Await responses from all slaves
     uint8_t wrong_count = 0;
-    for (int i = 0; i < master_state.client_count; i++) {
-        if (master_state.client_fds[i] == -1) {
+
+    // Read responses from each slave with timeout
+    for (uint32_t i = 0; i < master_state.slave_count; i++) {
+        if (!master_state.slave_stdout[i]) {
+            fip_print(0, FIP_WARN, "No output stream for slave %d", i + 1);
+            wrong_count++;
             continue;
         }
-        ssize_t recieved = 0;
-        bool is_closed = false;
-        while (recieved == 0 && !is_closed) {
-            if (master_state.client_fds[i] == -1) {
-                // The interop module closed while we waited on it
-                is_closed = true;
-                continue;
-            }
-            memset(buffer, 0, FIP_MSG_SIZE);
-            recieved = recv(                                        //
-                master_state.client_fds[i], buffer, FIP_MSG_SIZE, 0 //
-            );
-            if (recieved == -1) {
-                fip_print(0, FIP_WARN,
-                    "Failed to recieve message from slave %d", i + 1);
-                wrong_count++;
-                continue;
-            } else if (recieved == 0) {
-                // Wait 100µs before retry
-                struct timespec time = {.tv_sec = 0, .tv_nsec = 100000};
-                nanosleep(&time, NULL);
-            }
-        }
-        if (is_closed) {
+
+        // Set up timeout for reading
+        int fd = fileno(master_state.slave_stdout[i]);
+        fd_set read_fds;
+        struct timeval timeout;
+
+        FD_ZERO(&read_fds);
+        FD_SET(fd, &read_fds);
+        timeout.tv_sec = 3; // 3 second timeout
+        timeout.tv_usec = 0;
+
+        int activity = select(fd + 1, &read_fds, NULL, NULL, &timeout);
+        if (activity <= 0) {
+            fip_print(0, FIP_WARN, "Timeout waiting for slave %d response",
+                i + 1);
+            wrong_count++;
             continue;
         }
+
+        // Read message length (4 bytes)
+        uint32_t msg_len;
+        if (fread(&msg_len, 1, 4, master_state.slave_stdout[i]) != 4) {
+            fip_print(0, FIP_WARN,
+                "Failed to read message length from slave %d", i + 1);
+            wrong_count++;
+            continue;
+        }
+
+        // Validate message length
+        if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
+            fip_print(0, FIP_WARN, "Invalid message length from slave %d: %u",
+                i + 1, msg_len);
+            wrong_count++;
+            continue;
+        }
+
+        // Read message data
+        memset(buffer, 0, FIP_MSG_SIZE);
+        if (fread(buffer, 1, msg_len, master_state.slave_stdout[i]) !=
+            msg_len) {
+            fip_print(0, FIP_WARN,
+                "Failed to read complete message from slave %d", i + 1);
+            wrong_count++;
+            continue;
+        }
+
+        // Decode message
         fip_decode_msg(buffer, &responses[*response_count]);
-        fip_print(0, FIP_INFO, "Recieved message from slave %d: %s", i + 1,
+        fip_print(0, FIP_INFO, "Received message from slave %d: %s", i + 1,
             fip_msg_type_str[responses[*response_count].type]);
+
         if (responses[*response_count].type != expected_msg_type) {
             wrong_count++;
         }
+
         (*response_count)++;
+
+        // Prevent buffer overflow
+        if (*response_count >= FIP_MAX_SLAVES) {
+            break;
+        }
     }
+
     return wrong_count;
 }
 
@@ -1571,7 +1576,7 @@ bool fip_master_symbol_request( //
         FIP_MSG_SYMBOL_RESPONSE                           //
     );
     if (wrong_msg_count > 0) {
-        fip_print(0, FIP_WARN, "Recieved %u wrong messages", wrong_msg_count);
+        fip_print(0, FIP_WARN, "Received %u wrong messages", wrong_msg_count);
     }
     // Now we need to check whether any module has the given symbol, if one has
     // we can continue, if not we need to exit right away
@@ -1604,10 +1609,10 @@ bool fip_master_compile_request( //
         FIP_MSG_OBJECT_RESPONSE                           //
     );
     if (wrong_msg_count > 0) {
-        fip_print(0, FIP_WARN, "Recieved %u faulty messages", wrong_msg_count);
+        fip_print(0, FIP_WARN, "Received %u faulty messages", wrong_msg_count);
     }
     // Now we can go through all responses and print all the .o files we
-    // recieved
+    // received
     for (uint8_t i = 0; i < master_state.response_count; i++) {
         const fip_msg_t *response = &master_state.responses[i];
         if (response->type != FIP_MSG_OBJECT_RESPONSE) {
@@ -1619,7 +1624,6 @@ bool fip_master_compile_request( //
             fip_print(0, FIP_INFO, "Object response from module: %s",
                 response->u.obj_res.module_name);
             fip_print(0, FIP_DEBUG, "Paths: %s", response->u.obj_res.paths);
-            return true;
         } else {
             fip_print(0, FIP_INFO, "Object response has no objects");
         }
@@ -1627,19 +1631,20 @@ bool fip_master_compile_request( //
     return true;
 }
 
-void fip_master_cleanup_socket(int socket_fd) {
-    // Close all client connections
-    for (int i = 0; i < master_state.client_count; i++) {
-        if (master_state.client_fds[i] != -1) {
-            close(master_state.client_fds[i]);
+void fip_master_cleanup() {
+    // Close all slave file streams
+    for (uint32_t i = 0; i < master_state.slave_count; i++) {
+        if (master_state.slave_stdin[i]) {
+            fclose(master_state.slave_stdin[i]);
+            master_state.slave_stdin[i] = NULL;
+        }
+        if (master_state.slave_stdout[i]) {
+            fclose(master_state.slave_stdout[i]);
+            master_state.slave_stdout[i] = NULL;
         }
     }
-
-    if (socket_fd != -1) {
-        close(socket_fd);
-    }
-    unlink(FIP_SOCKET_PATH);
-    fip_print(0, FIP_INFO, "Socket cleaned up");
+    master_state.slave_count = 0;
+    fip_print(0, FIP_INFO, "Master cleaned up");
 }
 
 fip_master_config_t fip_master_load_config() {
@@ -1718,79 +1723,56 @@ fip_master_config_t fip_master_load_config() {
 
 #ifdef FIP_SLAVE
 
-int fip_slave_init_socket() {
-    int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (socket_fd == -1) {
-        return -1;
-    }
-
-    struct sockaddr_un addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, FIP_SOCKET_PATH, sizeof(addr.sun_path) - 1);
-
-    // Try to connect to master (with retries)
-    for (int i = 0; i < 10; i++) { // Try 10 times
-        if (connect(socket_fd, (struct sockaddr *)&addr, sizeof(addr)) == 0) {
-            return socket_fd; // Success
-        }
-        // Wait 100ms before retry
-        struct timespec time = {.tv_sec = 0, .tv_nsec = 100000000};
-        nanosleep(&time, NULL);
-    }
-
-    close(socket_fd);
-    return -1; // Failed to connect
+bool fip_slave_init(uint32_t slave_id) {
+    fip_print(slave_id, FIP_INFO, "Slave initialized for stdio communication");
+    return true;
 }
 
-bool fip_slave_receive_message( //
-    int socket_fd,              //
-    char buffer[FIP_MSG_SIZE]   //
-) {
-    memset(buffer, 0, FIP_MSG_SIZE);
-    fd_set read_fds;
-    struct timeval timeout;
-
-    FD_ZERO(&read_fds);
-    FD_SET(socket_fd, &read_fds);
-
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 100000; // 100ms timeout
-
-    int activity = select(socket_fd + 1, &read_fds, NULL, NULL, &timeout);
-
-    if (activity > 0 && FD_ISSET(socket_fd, &read_fds)) {
-        ssize_t received = recv(socket_fd, buffer, FIP_MSG_SIZE, 0);
-        if (received > 0) {
-            return true;
-        }
+bool fip_slave_receive_message(char buffer[FIP_MSG_SIZE]) {
+    // Read message length (4 bytes) from stdin
+    uint32_t msg_len;
+    if (fread(&msg_len, 1, 4, stdin) != 4) {
+        return false; // No message available
     }
 
-    return false; // No message or error
+    // Validate message length
+    if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
+        return false;
+    }
+
+    // Read message data
+    memset(buffer, 0, FIP_MSG_SIZE);
+    if (fread(buffer, 1, msg_len, stdin) != msg_len) {
+        return false;
+    }
+
+    return true;
 }
 
 void fip_slave_send_message(   //
     uint32_t id,               //
-    int socket_fd,             //
     char buffer[FIP_MSG_SIZE], //
     const fip_msg_t *message   //
 ) {
-    // First we need to encode the message in the buffer
+    // First encode the message in the buffer
     fip_encode_msg(buffer, message);
 
-    ssize_t sent = send(socket_fd, buffer, FIP_MSG_SIZE, 0);
-    if (sent == -1) {
-        fip_print(id, FIP_ERROR, "Failed to send message: %s (fd=%d)",
-            strerror(errno), socket_fd);
-    } else {
-        fip_print(id, FIP_INFO, "Successfully sent %zd bytes", sent);
+    // Get the message length from the first 4 bytes
+    uint32_t msg_len = *(uint32_t *)buffer;
+
+    // Write the whole message in one go to stdout
+    size_t written_bytes = fwrite(buffer, 1, msg_len + 4, stdout);
+    if (written_bytes != msg_len + 4) {
+        fip_print(id, FIP_ERROR, "Failed to write message");
+        return;
     }
+
+    fflush(stdout);
+    fip_print(id, FIP_INFO, "Successfully sent message of %u bytes", msg_len);
 }
 
-void fip_slave_cleanup_socket(int socket_fd) {
-    if (socket_fd != -1) {
-        close(socket_fd);
-    }
+void fip_slave_cleanup() {
+    fip_print(1, FIP_INFO, "Slave cleaned up");
 }
 
 toml_result_t fip_slave_load_config( //
