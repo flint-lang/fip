@@ -72,7 +72,6 @@ typedef struct {
 fip_c_symbol_t symbols[MAX_SYMBOLS]; // Simple array for now
 uint32_t symbol_count = 0;
 uint32_t ID;
-int SOCKET_FD;
 fip_module_config_t CONFIG;
 
 bool parse_toml_file(toml_result_t toml) {
@@ -569,7 +568,7 @@ void handle_symbol_request(    //
     const fip_msg_t *message   //
 ) {
     assert(message->u.sym_req.type == FIP_SYM_FUNCTION);
-    fip_print(ID, FIP_INFO, "Symbol Request Recieved");
+    fip_print(ID, FIP_INFO, "Symbol Request Received");
     const fip_sig_fn_t *msg_fn = &message->u.sym_req.sig.fn;
     fip_print_sig_fn(ID, msg_fn);
     fip_msg_t response = {0};
@@ -609,7 +608,7 @@ void handle_symbol_request(    //
         }
     }
     sym_res->found = sym_match;
-    fip_slave_send_message(ID, SOCKET_FD, buffer, &response);
+    fip_slave_send_message(ID, buffer, &response);
 }
 
 bool compile_file(                                    //
@@ -687,7 +686,7 @@ void handle_compile_request(   //
     const fip_msg_t *message   //
 ) {
     assert(message->type == FIP_MSG_COMPILE_REQUEST);
-    fip_print(ID, FIP_INFO, "Compile Request Recieved");
+    fip_print(ID, FIP_INFO, "Compile Request Received");
     fip_msg_t response = {0};
     response.type = FIP_MSG_OBJECT_RESPONSE;
     fip_msg_object_response_t *obj_res = &response.u.obj_res;
@@ -708,7 +707,7 @@ void handle_compile_request(   //
         }
     }
 
-    fip_slave_send_message(ID, SOCKET_FD, buffer, &response);
+    fip_slave_send_message(ID, buffer, &response);
 }
 
 int main(int argc, char *argv[]) {
@@ -735,13 +734,12 @@ int main(int argc, char *argv[]) {
 
     char msg_buf[1024] = {0};
 
-    // Connect to master's socket
-    SOCKET_FD = fip_slave_init_socket();
-    if (SOCKET_FD == -1) {
-        fip_print(ID, FIP_ERROR, "Failed to connect to master socket");
+    // Initialize slave for stdio communication
+    if (!fip_slave_init(ID)) {
+        fip_print(ID, FIP_ERROR, "Failed to initialize slave");
         return 1;
     }
-    fip_print(ID, FIP_INFO, "Successfully connected to master socket");
+    fip_print(ID, FIP_INFO, "Successfully initialized slave communication");
 
     fip_msg_t msg = {0};
     msg.type = FIP_MSG_CONNECT_REQUEST;
@@ -777,11 +775,11 @@ send:
     // connect to it
     if (!msg.u.con_req.setup_ok) {
         fip_print(ID, FIP_INFO, "Sending shutdown request to master...");
-        fip_slave_send_message(ID, SOCKET_FD, msg_buf, &msg);
+        fip_slave_send_message(ID, msg_buf, &msg);
         goto kill;
     }
     fip_print(ID, FIP_INFO, "Sending connect request to master...");
-    fip_slave_send_message(ID, SOCKET_FD, msg_buf, &msg);
+    fip_slave_send_message(ID, msg_buf, &msg);
 
     // Print all sources and all compile flags and parse all source files
     for (uint32_t i = 0; i < CONFIG.compile_flags_len; i++) {
@@ -801,7 +799,7 @@ send:
         struct timespec start_time;
         clock_gettime(CLOCK_MONOTONIC, &start_time);
 
-        if (fip_slave_receive_message(SOCKET_FD, msg_buf)) {
+        if (fip_slave_receive_message(msg_buf)) {
             // Only print the first time we receive a message
             fip_print(ID, FIP_DEBUG, "Received message");
             fip_msg_t message = {0};
@@ -809,34 +807,37 @@ send:
 
             switch (message.type) {
                 case FIP_MSG_UNKNOWN:
-                    fip_print(ID, FIP_WARN, "Recieved unknown message");
+                    fip_print(ID, FIP_WARN, "Received unknown message");
                     break;
                 case FIP_MSG_CONNECT_REQUEST:
-                    // The slave should not recieve a message it sends
+                    // The slave should not receive a message it sends
                     assert(false);
                     break;
                 case FIP_MSG_SYMBOL_REQUEST:
                     handle_symbol_request(msg_buf, &message);
                     break;
                 case FIP_MSG_SYMBOL_RESPONSE:
-                    // The slave should not recieve a message it sends
+                    // The slave should not receive a message it sends
                     assert(false);
                     break;
                 case FIP_MSG_COMPILE_REQUEST:
                     handle_compile_request(msg_buf, &message);
                     break;
                 case FIP_MSG_OBJECT_RESPONSE:
-                    // The slave should not recieve a message it sends
+                    // The slave should not receive a message it sends
                     assert(false);
                     break;
                 case FIP_MSG_KILL:
                     fip_print(                                    //
                         ID, FIP_INFO,                             //
-                        "Recieved Kill Command, shutting down..." //
+                        "Received Kill Command, shutting down..." //
                     );
                     is_running = false;
                     break;
             }
+
+            // Free the decoded message
+            fip_free_msg(&message);
         }
 
         // Calculate elapsed time and adjust sleep to maintain 1ms intervals
@@ -855,7 +856,7 @@ send:
     }
 
 kill:
-    fip_slave_cleanup_socket(SOCKET_FD);
+    fip_slave_cleanup();
     fip_print(ID, FIP_INFO, "ending...");
     return 0;
 }
