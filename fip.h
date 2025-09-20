@@ -1222,6 +1222,139 @@ void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
 }
 
 /*
+ * ======================================
+ * PLATFORM-AGNOSTIC STDIO FUNCTIONS
+ * ======================================
+ */
+
+#ifdef FIP_MASTER
+
+void fip_master_broadcast_message( //
+    char buffer[FIP_MSG_SIZE],     //
+    const fip_msg_t *message       //
+) {
+    fip_print(0, FIP_INFO, "Broadcasting message to %d slaves",
+        master_state.slave_count);
+    fip_encode_msg(buffer, message);
+    uint32_t msg_len = *(uint32_t *)buffer;
+
+    for (uint32_t i = 0; i < master_state.slave_count; i++) {
+        if (master_state.slave_stdin[i]) {
+            size_t written =
+                fwrite(buffer, 1, msg_len + 4, master_state.slave_stdin[i]);
+            if (written != (msg_len + 4)) {
+                fip_print(0, FIP_WARN, "Failed to write message to slave %d",
+                    i + 1);
+                continue;
+            }
+            fflush(master_state.slave_stdin[i]);
+            fip_print(0, FIP_DEBUG, "Sent message to slave %d", i + 1);
+        }
+    }
+}
+
+bool fip_master_symbol_request( //
+    char buffer[FIP_MSG_SIZE],  //
+    const fip_msg_t *message    //
+) {
+    assert(message->type == FIP_MSG_SYMBOL_REQUEST);
+    fip_master_broadcast_message(buffer, message);
+    uint8_t wrong_msg_count =
+        fip_master_await_responses(buffer, master_state.responses,
+            &master_state.response_count, FIP_MSG_SYMBOL_RESPONSE);
+    if (wrong_msg_count > 0) {
+        fip_print(0, FIP_WARN, "Received %u wrong messages", wrong_msg_count);
+    }
+
+    bool symbol_found = false;
+    for (uint8_t i = 0; i < master_state.response_count; i++) {
+        if (master_state.responses[i].type == FIP_MSG_SYMBOL_RESPONSE &&
+            master_state.responses[i].u.sym_res.found) {
+            symbol_found = true;
+        }
+    }
+
+    if (symbol_found) {
+        fip_print(0, FIP_INFO, "Requested symbol found");
+    } else {
+        fip_print(0, FIP_WARN, "Requested symbol not found");
+    }
+    return symbol_found;
+}
+
+bool fip_master_compile_request( //
+    char buffer[FIP_MSG_SIZE],   //
+    const fip_msg_t *message     //
+) {
+    assert(message->type == FIP_MSG_COMPILE_REQUEST);
+    fip_master_broadcast_message(buffer, message);
+    uint8_t wrong_msg_count =
+        fip_master_await_responses(buffer, master_state.responses,
+            &master_state.response_count, FIP_MSG_OBJECT_RESPONSE);
+    if (wrong_msg_count > 0) {
+        fip_print(0, FIP_WARN, "Received %u faulty messages", wrong_msg_count);
+    }
+
+    for (uint8_t i = 0; i < master_state.response_count; i++) {
+        const fip_msg_t *response = &master_state.responses[i];
+        if (response->type != FIP_MSG_OBJECT_RESPONSE) {
+            fip_print(0, FIP_ERROR, "Wrong message as response from slave %d",
+                i);
+            return false;
+        }
+        if (response->u.obj_res.has_obj) {
+            fip_print(0, FIP_INFO, "Object response from module: %s",
+                response->u.obj_res.module_name);
+            fip_print(0, FIP_DEBUG, "Paths: %s", response->u.obj_res.paths);
+        } else {
+            fip_print(0, FIP_INFO, "Object response has no objects");
+        }
+    }
+    return true;
+}
+
+void fip_master_cleanup() {
+    for (uint32_t i = 0; i < master_state.slave_count; i++) {
+        if (master_state.slave_stdin[i]) {
+            fclose(master_state.slave_stdin[i]);
+            master_state.slave_stdin[i] = NULL;
+        }
+        if (master_state.slave_stdout[i]) {
+            fclose(master_state.slave_stdout[i]);
+            master_state.slave_stdout[i] = NULL;
+        }
+    }
+    master_state.slave_count = 0;
+    fip_print(0, FIP_INFO, "Master cleaned up");
+}
+
+#endif // End of platform-agnostic master functions
+
+#ifdef FIP_SLAVE
+
+void fip_slave_send_message(   //
+    uint32_t id,               //
+    char buffer[FIP_MSG_SIZE], //
+    const fip_msg_t *message   //
+) {
+    fip_encode_msg(buffer, message);
+    uint32_t msg_len = *(uint32_t *)buffer;
+    size_t written_bytes = fwrite(buffer, 1, msg_len + 4, stdout);
+    if (written_bytes != msg_len + 4) {
+        fip_print(id, FIP_ERROR, "Failed to write message");
+        return;
+    }
+    fflush(stdout);
+    fip_print(id, FIP_INFO, "Successfully sent message of %u bytes", msg_len);
+}
+
+void fip_slave_cleanup() {
+    fip_print(1, FIP_INFO, "Slave cleaned up");
+}
+
+#endif // End of platform-agnostic slave functions
+
+/*
  * ======================
  * WINDOWS IMPLEMENTATION
  * ======================
@@ -1445,36 +1578,6 @@ bool fip_master_init(fip_interop_modules_t *modules) {
     return true;
 }
 
-void fip_master_broadcast_message( //
-    char buffer[FIP_MSG_SIZE],     //
-    const fip_msg_t *message       //
-) {
-    fip_print(0, FIP_INFO, "Broadcasting message to %d slaves",
-        master_state.slave_count);
-    fip_encode_msg(buffer, message);
-
-    // Get the message length from the first 4 bytes
-    uint32_t msg_len = *(uint32_t *)buffer;
-
-    // Send to each slave individually
-    for (uint32_t i = 0; i < master_state.slave_count; i++) {
-        if (master_state.slave_stdin[i]) {
-            // Just write the whole buffer to the slaves stdin
-            size_t written_bytes = fwrite(                          //
-                buffer, 1, msg_len + 4, master_state.slave_stdin[i] //
-            );
-            if (written_bytes != (msg_len + 4)) {
-                fip_print(0, FIP_WARN, "Failed to write message to slave %d",
-                    i + 1);
-                continue;
-            }
-
-            fflush(master_state.slave_stdin[i]);
-            fip_print(0, FIP_DEBUG, "Sent message to slave %d", i + 1);
-        }
-    }
-}
-
 uint8_t fip_master_await_responses(        //
     char buffer[FIP_MSG_SIZE],             //
     fip_msg_t responses[FIP_MAX_SLAVES],   //
@@ -1561,90 +1664,6 @@ uint8_t fip_master_await_responses(        //
     }
 
     return wrong_count;
-}
-
-bool fip_master_symbol_request( //
-    char buffer[FIP_MSG_SIZE],  //
-    const fip_msg_t *message    //
-) {
-    assert(message->type == FIP_MSG_SYMBOL_REQUEST);
-    fip_master_broadcast_message(buffer, message);
-    uint8_t wrong_msg_count = fip_master_await_responses( //
-        buffer,                                           //
-        master_state.responses,                           //
-        &master_state.response_count,                     //
-        FIP_MSG_SYMBOL_RESPONSE                           //
-    );
-    if (wrong_msg_count > 0) {
-        fip_print(0, FIP_WARN, "Received %u wrong messages", wrong_msg_count);
-    }
-    // Now we need to check whether any module has the given symbol, if one has
-    // we can continue, if not we need to exit right away
-    bool symbol_found = false;
-    for (uint8_t i = 0; i < master_state.response_count; i++) {
-        if (master_state.responses[i].type == FIP_MSG_SYMBOL_RESPONSE //
-            && master_state.responses[i].u.sym_res.found              //
-        ) {
-            symbol_found = true;
-        }
-    }
-    if (symbol_found) {
-        fip_print(0, FIP_INFO, "Requested symbol found");
-    } else {
-        fip_print(0, FIP_WARN, "Requested symbol not found");
-    }
-    return symbol_found;
-}
-
-bool fip_master_compile_request( //
-    char buffer[FIP_MSG_SIZE],   //
-    const fip_msg_t *message     //
-) {
-    assert(message->type == FIP_MSG_COMPILE_REQUEST);
-    fip_master_broadcast_message(buffer, message);
-    uint8_t wrong_msg_count = fip_master_await_responses( //
-        buffer,                                           //
-        master_state.responses,                           //
-        &master_state.response_count,                     //
-        FIP_MSG_OBJECT_RESPONSE                           //
-    );
-    if (wrong_msg_count > 0) {
-        fip_print(0, FIP_WARN, "Received %u faulty messages", wrong_msg_count);
-    }
-    // Now we can go through all responses and print all the .o files we
-    // received
-    for (uint8_t i = 0; i < master_state.response_count; i++) {
-        const fip_msg_t *response = &master_state.responses[i];
-        if (response->type != FIP_MSG_OBJECT_RESPONSE) {
-            fip_print(0, FIP_ERROR, "Wrong message as response from slave %d",
-                i);
-            return false;
-        }
-        if (response->u.obj_res.has_obj) {
-            fip_print(0, FIP_INFO, "Object response from module: %s",
-                response->u.obj_res.module_name);
-            fip_print(0, FIP_DEBUG, "Paths: %s", response->u.obj_res.paths);
-        } else {
-            fip_print(0, FIP_INFO, "Object response has no objects");
-        }
-    }
-    return true;
-}
-
-void fip_master_cleanup() {
-    // Close all slave file streams
-    for (uint32_t i = 0; i < master_state.slave_count; i++) {
-        if (master_state.slave_stdin[i]) {
-            fclose(master_state.slave_stdin[i]);
-            master_state.slave_stdin[i] = NULL;
-        }
-        if (master_state.slave_stdout[i]) {
-            fclose(master_state.slave_stdout[i]);
-            master_state.slave_stdout[i] = NULL;
-        }
-    }
-    master_state.slave_count = 0;
-    fip_print(0, FIP_INFO, "Master cleaned up");
 }
 
 fip_master_config_t fip_master_load_config() {
@@ -1747,32 +1766,6 @@ bool fip_slave_receive_message(char buffer[FIP_MSG_SIZE]) {
     }
 
     return true;
-}
-
-void fip_slave_send_message(   //
-    uint32_t id,               //
-    char buffer[FIP_MSG_SIZE], //
-    const fip_msg_t *message   //
-) {
-    // First encode the message in the buffer
-    fip_encode_msg(buffer, message);
-
-    // Get the message length from the first 4 bytes
-    uint32_t msg_len = *(uint32_t *)buffer;
-
-    // Write the whole message in one go to stdout
-    size_t written_bytes = fwrite(buffer, 1, msg_len + 4, stdout);
-    if (written_bytes != msg_len + 4) {
-        fip_print(id, FIP_ERROR, "Failed to write message");
-        return;
-    }
-
-    fflush(stdout);
-    fip_print(id, FIP_INFO, "Successfully sent message of %u bytes", msg_len);
-}
-
-void fip_slave_cleanup() {
-    fip_print(1, FIP_INFO, "Slave cleaned up");
 }
 
 toml_result_t fip_slave_load_config( //
