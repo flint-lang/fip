@@ -60,11 +60,13 @@ This is the minimum setup required for FIP to work correctly. First, you need at
 enable = true
 ```
 
-The header, `fip-c` in this case, can be *any text*, it is simply the IM to look for. So, if you provide your own IM you can add the lines
+The header, `fip-c` in this case, can be _any text_, it is simply the IM to look for. So, if you provide your own IM you can add the lines
+
 ```toml
 [mymodule]
 enable = true
 ```
+
 to the `fip.toml` file and your module will pretty much be good to go, as long as it works properly with the FIP.
 
 ## `fip-c.toml`
@@ -76,35 +78,31 @@ compiler = "clang"
 sources = ["path/to/header.h", "path/to/source.c"]
 compile_flags = ["-g", "-O0"]
 ```
+
 The `compiler` field is just the compiler executable which will be executed. It can be `clang`, `gcc`, `filc`, `zig cc` or any other C compiler of your liking.
 The `sources` field is a simple array of string values, each pointing to a source which will be parsed and scanned for definitions by the `fip-c` Interop Module
 The `compile_flags` field is a simple array of string values for all compile flags you would normally call the compiler with
 
 With these commands, the C compiler is called to produce the `.o` file(s) from the source(s). These are all configurations that are available at the moment, it will be expanded in the future. Also, these fields are **not** optional. The `fip-c` module will exit with an message of a faulty config if not all fields are provided (the arrays could be empty). For empty sources the `fip-c` Interop Module will exit too, as it does not have anything to do. Actually it idles because exiting would break the Flint Compiler as it would wait on a process which does no longer exist, so for now the IM just keeps running until the compiler is done and sends the kill message.
 
-Different Modules can have vastly different configuration files, taylored to their specific language. The `fip-rs` module could have a `crates = []` field, for example. The module-specific configuration files are *not* parsed by the compiler, they are *only* parsed by their targetted Interop Module. When creating your own interop module named `mymodule` (for example) you should call the config file `mymodule.toml` too. Keep all names related.
+Different Modules can have vastly different configuration files, taylored to their specific language. The `fip-rs` module could have a `crates = []` field, for example. The module-specific configuration files are _not_ parsed by the compiler, they are _only_ parsed by their targetted Interop Module. When creating your own interop module named `mymodule` (for example) you should call the config file `mymodule.toml` too. Keep all names related.
 
 ## `fip-c`
 
-Now let's come to the Interop Module itself. As of for now, the `fip-c` Interop Module is only `170 kB` in size, as it does not contain a compiler in of itself, it's just a small wrapper for the protocol and to call system commands itself. It is expected for all Interop Modules to be small in size, similar to the `fip-c` module.
-
-The Interop Modules of FIP are stored in the `.fip/modules/` directory. So, `fip-c` needs to be stored in there too. It is the directory the Flint Compiler will try to spawn the Interop Modules found in the `fip.toml` file from. So, if you want to create your own Interop Module you need to add it to the `fip.toml` file, add a `mymodule.toml` config file and you need to place `mymodule` in the `.fip/modules/` path.
-
-It was a deliberate design decision to require placing the IMs into the specific directory. This way it is not system-dependant, and all the fip-related configuration and modules of any project ly inside the single `.fip/` directory. 
-
-# Module Manager
-
-It is planned to integrate an Interop Module Manager into the `flint` executable itself (not the `flintc` executable). The `flint` executable will contain Wikis, Documentation, The IM-Manager, potentially a package manager and more, but that's a topic of the future, it does not even exist yet. So, for now you need to download the `fip-c` module or other modules directly from the releases page of this repository.
+Now let's come to the Interop Module itself. Because the `fip-c` executable depends on `libclang`, it has became quite large. Because of this the `fip-c` executable now needs to be available in your `PATH`, for example through putting it alongside the `flintc` executable into the `.local/bin` directory. You can download the `fip-c` binary from the [Releases](https://github.com/flint-lang/fip/releases) page.
 
 # Bindings
 
 Because each Interop Module is a "master" in it's own language, you do not need to write bindings for external code at all. But, you sadly still need to declare each extern function you want to use, through an extern definition like
+
 ```rs
 extern def foo(i32 x);
 ```
+
 If you want to use a library with a lot of functions you will end up with a situation where you have a `raylib.ft` file just containing all definitions for the external functions. This is not optimal, and I am working on a solution to that problem, but it's design is not yet fully resolved. I was thinking about a flag of the Flint Compiler to tell it to generate "bindings" (a `.ft` file containing all extern definitions) of all extern code, but I want to limit this somehow. This problem is related to a different problem.
 
 When you want to use the `SDL` and `raylib` library from C, for example, but you want them to be compiled using different compile flags, you simply cannot do it effectively as of now. The solution I imagine would look as follows:
+
 ```toml
 [raylib]
 compiler = "clang"
