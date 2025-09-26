@@ -80,7 +80,7 @@ int main() {
     // we actually would not need to to the same as here.
     msg.type = FIP_MSG_SYMBOL_REQUEST;
     msg.u.sym_req.type = FIP_SYM_FUNCTION;
-    strncpy(msg.u.sym_req.sig.fn.name, "ClearBackground", 15);
+    strcpy(msg.u.sym_req.sig.fn.name, "ClearBackground");
     msg.u.sym_req.sig.fn.rets_len = 0;
     msg.u.sym_req.sig.fn.rets = NULL;
     msg.u.sym_req.sig.fn.args_len = 1;

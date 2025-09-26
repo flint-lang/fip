@@ -181,12 +181,6 @@ enum CXChildVisitResult struct_field_visitor( //
 bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
     fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
 
-    // Debug output to see what type we're dealing with
-    // CXString type_spelling = clang_getTypeSpelling(clang_type);
-    // const char *type_name = clang_getCString(type_spelling);
-    // fip_print(ID, "Processing type: %s (kind: %d)", type_name,
-    // clang_type.kind); clang_disposeString(type_spelling);
-
     switch (clang_type.kind) {
         case CXType_UChar:
             fip_type->type = FIP_TYPE_PRIMITIVE;
@@ -574,7 +568,9 @@ void handle_symbol_request(    //
     fip_msg_t response = {0};
     response.type = FIP_MSG_SYMBOL_RESPONSE;
     fip_msg_symbol_response_t *sym_res = &response.u.sym_res;
-    memcpy(sym_res->module_name, MODULE_NAME, sizeof(MODULE_NAME));
+    strncpy(sym_res->module_name, MODULE_NAME,
+        sizeof(sym_res->module_name) - 1);
+    sym_res->module_name[sizeof(sym_res->module_name) - 1] = '\0';
     sym_res->type = FIP_SYM_FUNCTION;
 
     bool sym_match = false;
@@ -649,8 +645,13 @@ bool compile_file(                                    //
     snprintf(output_path, sizeof(output_path), ".fip/cache/%.8s.o", hash);
 
     char compile_cmd[1024] = {0};
-    snprintf(compile_cmd, sizeof(compile_cmd), "%s -x c -c %s %s -o %s",
-        CONFIG.compiler, compile_flags, file_path, output_path);
+    int ret =
+        snprintf(compile_cmd, sizeof(compile_cmd), "%s -x c -c %s %s -o %s",
+            CONFIG.compiler, compile_flags, file_path, output_path);
+    if (ret >= (int)sizeof(compile_cmd)) {
+        fip_print(ID, FIP_ERROR, "Compile command too long, truncated");
+        return false;
+    }
 
     fip_print(ID, FIP_INFO, "Executing: %s", compile_cmd);
 
@@ -691,7 +692,9 @@ void handle_compile_request(   //
     response.type = FIP_MSG_OBJECT_RESPONSE;
     fip_msg_object_response_t *obj_res = &response.u.obj_res;
     obj_res->has_obj = false;
-    memcpy(obj_res->module_name, MODULE_NAME, sizeof(MODULE_NAME));
+    strncpy(obj_res->module_name, MODULE_NAME,
+        sizeof(obj_res->module_name) - 1);
+    obj_res->module_name[sizeof(obj_res->module_name) - 1] = '\0';
 
     // We need to go through all symbols and see whether they need to be
     // compiled
@@ -747,7 +750,9 @@ int main(int argc, char *argv[]) {
     msg.u.con_req.version.major = FIP_MAJOR;
     msg.u.con_req.version.minor = FIP_MINOR;
     msg.u.con_req.version.patch = FIP_PATCH;
-    strncpy(msg.u.con_req.module_name, MODULE_NAME, sizeof(MODULE_NAME));
+    strncpy(msg.u.con_req.module_name, MODULE_NAME,
+        sizeof(msg.u.con_req.module_name) - 1);
+    msg.u.con_req.module_name[sizeof(msg.u.con_req.module_name) - 1] = '\0';
 
     // Parse the toml file for this module.
     toml_result_t toml = fip_slave_load_config(ID, MODULE_NAME);
