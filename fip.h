@@ -33,20 +33,9 @@
 #define FIP_SLAVE
 #endif
 
-#ifndef _POSIX_C_SOURCE
-#define _POSIX_C_SOURCE 200112L
-#endif
-
 #include "toml/tomlc17.h"
 
-#ifndef __WIN32__
-#include <spawn.h>
-#endif
-
 #include <assert.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -54,7 +43,43 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+#ifdef __WIN32__
+#include <fcntl.h>
+#include <io.h>
+#include <process.h>
+#include <windows.h>
+#else
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+
+// #define _GNU_SOURCE
+// #define _XOPEN_SOURCE 700
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <spawn.h>
+#include <sys/select.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
+
+// Explicit function declarations for POSIX functions
+extern FILE *fdopen(int fd, const char *mode);
+extern int fileno(FILE *stream);
+extern int kill(pid_t pid, int sig);
+extern int nanosleep(const struct timespec *req, struct timespec *rem);
+extern FILE *popen(const char *command, const char *type);
+extern int pclose(FILE *stream);
+extern int clock_gettime(clockid_t clk_id, struct timespec *tp);
+
+// POSIX constants
+#ifndef CLOCK_MONOTONIC
+#define CLOCK_MONOTONIC 1
+#endif
+#endif
 
 #define FIP_MAX_SLAVES 64
 #define FIP_MSG_SIZE 1024
@@ -427,7 +452,9 @@ typedef struct {
     uint8_t enabled_count;
 } fip_master_config_t;
 
+#ifndef __WIN32__
 extern char **environ;
+#endif
 extern fip_master_state_t master_state;
 
 /// @function `fip_spawn_interop_module`
@@ -585,13 +612,6 @@ toml_result_t fip_slave_load_config( //
 #endif // End of #ifdef FIP_SLAVE
 
 #ifdef FIP_IMPLEMENTATION
-
-#include <errno.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <sys/select.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 const char *fip_msg_type_str[] = {
     "FIP_MSG_UNKNOWN",
@@ -1370,26 +1390,118 @@ void fip_slave_cleanup() {
 
 #ifdef FIP_MASTER
 
+typedef struct {
+    HANDLE process;
+    HANDLE stdin_write;
+    HANDLE stdout_read;
+    pid_t pid; // For compatibility with existing code
+} win_process_info_t;
+
+static win_process_info_t win_processes[FIP_MAX_SLAVES];
+
 bool fip_spawn_interop_module(      //
     fip_interop_modules_t *modules, //
     const char *module              //
 ) {
-    return false;
-}
+    char _module[256] = {0};
+    char id[8] = {0};
+    char ll[8] = {0};
+    strcpy(_module, module);
+    strcat(_module, ".exe"); // Add .exe extension
+    snprintf(id, 8, "%d", modules->active_count + 1);
+    snprintf(ll, 8, "%d", LOG_LEVEL);
 
-void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
-    return;
-}
+    fip_print(0, FIP_INFO, "Spawning slave %s...", id);
 
-bool fip_master_init(fip_interop_modules_t *modules) {
+    // Create pipes for communication
+    HANDLE stdin_read, stdin_write;
+    HANDLE stdout_read, stdout_write;
+    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+
+    if (!CreatePipe(&stdin_read, &stdin_write, &sa, 0) ||
+        !CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
+        fip_print(0, FIP_ERROR, "Failed to create pipes for slave %s", id);
+        return false;
+    }
+
+    // Make sure parent handles are not inherited
+    SetHandleInformation(stdin_write, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
+
+    // Create command line
+    char cmdline[512];
+    snprintf(cmdline, sizeof(cmdline), "\"%s\" %s %s", _module, id, ll);
+
+    STARTUPINFOA si = {0};
+    PROCESS_INFORMATION pi = {0};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = stdin_read;
+    si.hStdOutput = stdout_write;
+    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+
+    if (!CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si,
+            &pi)) {
+        fip_print(0, FIP_WARN, "Failed to spawn slave %s: %d", id,
+            GetLastError());
+        CloseHandle(stdin_read);
+        CloseHandle(stdin_write);
+        CloseHandle(stdout_read);
+        CloseHandle(stdout_write);
+        return false;
+    }
+
+    // Close child's ends of pipes
+    CloseHandle(stdin_read);
+    CloseHandle(stdout_write);
+    CloseHandle(pi.hThread);
+
+    // Store process info
+    win_processes[modules->active_count].process = pi.hProcess;
+    win_processes[modules->active_count].stdin_write = stdin_write;
+    win_processes[modules->active_count].stdout_read = stdout_read;
+    win_processes[modules->active_count].pid = pi.dwProcessId;
+
+    // Store PID in the modules array for compatibility
+    modules->pids[modules->active_count] = pi.dwProcessId;
+
+    // Convert to FILE streams
+    int stdin_fd =
+        _open_osfhandle((intptr_t)stdin_write, _O_WRONLY | _O_BINARY);
+    int stdout_fd =
+        _open_osfhandle((intptr_t)stdout_read, _O_RDONLY | _O_BINARY);
+
+    master_state.slave_stdin[modules->active_count] = _fdopen(stdin_fd, "wb");
+    master_state.slave_stdout[modules->active_count] = _fdopen(stdout_fd, "rb");
+
+    if (!master_state.slave_stdin[modules->active_count] ||
+        !master_state.slave_stdout[modules->active_count]) {
+        fip_print(0, FIP_ERROR, "Failed to create FILE streams for slave %s",
+            id);
+        return false;
+    }
+
+    modules->active_count++;
     return true;
 }
 
-void fip_master_broadcast_message( //
-    char buffer[FIP_MSG_SIZE],     //
-    const fip_msg_t *message       //
-) {
-    return;
+void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
+    for (uint8_t i = 0; i < modules->active_count; i++) {
+        if (win_processes[i].process) {
+            TerminateProcess(win_processes[i].process, 1);
+            CloseHandle(win_processes[i].process);
+            win_processes[i].process = NULL;
+        }
+    }
+}
+
+bool fip_master_init(fip_interop_modules_t *modules) {
+    master_state.slave_count = modules->active_count;
+    master_state.response_count = 0;
+    fip_print(0, FIP_INFO,
+        "Master initialized for stdio communication with %d slaves",
+        master_state.slave_count);
+    return true;
 }
 
 uint8_t fip_master_await_responses(        //
@@ -1398,29 +1510,113 @@ uint8_t fip_master_await_responses(        //
     uint32_t *response_count,              //
     const fip_msg_type_t expected_msg_type //
 ) {
-    return 0;
-}
+    fip_print(0, FIP_INFO, "Awaiting Responses");
 
-bool fip_master_symbol_request( //
-    char buffer[FIP_MSG_SIZE],  //
-    const fip_msg_t *message    //
-) {
-    return false;
-}
+    for (uint8_t i = 0; i < *response_count; i++) {
+        fip_free_msg(&responses[i]);
+    }
+    *response_count = 0;
+    uint8_t wrong_count = 0;
 
-bool fip_master_compile_request( //
-    char buffer[FIP_MSG_SIZE],   //
-    const fip_msg_t *message     //
-) {
-    return false;
-}
+    for (uint32_t i = 0; i < master_state.slave_count; i++) {
+        if (!master_state.slave_stdout[i]) {
+            fip_print(0, FIP_WARN, "No output stream for slave %d", i + 1);
+            wrong_count++;
+            continue;
+        }
 
-void fip_master_cleanup() {
-    return;
+        // Simple timeout using non-blocking read
+        uint32_t msg_len;
+        if (fread(&msg_len, 1, 4, master_state.slave_stdout[i]) != 4) {
+            fip_print(0, FIP_WARN,
+                "Failed to read message length from slave %d", i + 1);
+            wrong_count++;
+            continue;
+        }
+
+        if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
+            fip_print(0, FIP_WARN, "Invalid message length from slave %d: %u",
+                i + 1, msg_len);
+            wrong_count++;
+            continue;
+        }
+
+        memset(buffer, 0, FIP_MSG_SIZE);
+        if (fread(buffer, 1, msg_len, master_state.slave_stdout[i]) !=
+            msg_len) {
+            fip_print(0, FIP_WARN,
+                "Failed to read complete message from slave %d", i + 1);
+            wrong_count++;
+            continue;
+        }
+
+        fip_decode_msg(buffer, &responses[*response_count]);
+        fip_print(0, FIP_INFO, "Received message from slave %d: %s", i + 1,
+            fip_msg_type_str[responses[*response_count].type]);
+
+        if (responses[*response_count].type != expected_msg_type) {
+            wrong_count++;
+        }
+
+        (*response_count)++;
+        if (*response_count >= FIP_MAX_SLAVES)
+            break;
+    }
+
+    return wrong_count;
 }
 
 fip_master_config_t fip_master_load_config() {
+    const char *file_path = ".fip/config/fip.toml";
+    FILE *fp = fopen(file_path, "r");
     fip_master_config_t config = {0};
+    config.ok = false;
+    if (!fp) {
+        fip_print(0, FIP_WARN, "Config file not found: %s", file_path);
+        return config;
+    }
+    toml_result_t toml = toml_parse_file(fp);
+    fclose(fp);
+    if (!toml.ok) {
+        fip_print(0, FIP_ERROR, "Failed to parse fip.toml file: %s",
+            toml.errmsg);
+        return config;
+    }
+
+    if (toml.toptab.type != TOML_TABLE) {
+        assert(false);
+    }
+    for (int32_t i = 0; i < toml.toptab.u.tab.size; i++) {
+        const char *section_name = toml.toptab.u.tab.key[i];
+        if (strncmp(section_name, "fip-", 4) != 0) {
+            continue;
+        }
+        toml_datum_t section = toml.toptab.u.tab.value[i];
+        if (section.type != TOML_TABLE) {
+            continue;
+        }
+        toml_datum_t enabled = toml_get(section, "enable");
+        if (enabled.type != TOML_BOOLEAN || !enabled.u.boolean) {
+            fip_print(0, FIP_WARN,
+                "Module %s is disabled or missing enable field", section_name);
+            continue;
+        }
+        if (config.enabled_count >= FIP_MAX_ENABLED_MODULES) {
+            fip_print(0, FIP_ERROR, "There are too many active modules (%d)!",
+                config.enabled_count);
+            continue;
+        }
+        strncpy(config.enabled_modules[config.enabled_count], section_name,
+            FIP_MAX_MODULE_NAME_LEN - 1);
+        config.enabled_modules[config.enabled_count]
+                              [FIP_MAX_MODULE_NAME_LEN - 1] = '\0';
+        config.enabled_count++;
+        fip_print(0, FIP_INFO, "Enabled module: %s", section_name);
+    }
+
+    toml_free(toml);
+    fip_print(0, FIP_INFO, "Found %d enabled modules", config.enabled_count);
+    config.ok = true;
     return config;
 }
 
@@ -1435,34 +1631,52 @@ fip_master_config_t fip_master_load_config() {
 #ifdef FIP_SLAVE
 
 bool fip_slave_init(uint32_t slave_id) {
+    // Set stdin/stdout to binary mode on Windows
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+    fip_print(slave_id, FIP_INFO, "Slave initialized for stdio communication");
     return true;
 }
 
 bool fip_slave_receive_message(char buffer[FIP_MSG_SIZE]) {
-    return false;
-}
-
-void fip_slave_send_message(   //
-    uint32_t id,               //
-    char buffer[FIP_MSG_SIZE], //
-    const fip_msg_t *message   //
-) {
-    return;
-}
-
-void fip_slave_cleanup() {
-    return;
+    uint32_t msg_len;
+    if (fread(&msg_len, 1, 4, stdin) != 4) {
+        return false;
+    }
+    if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
+        return false;
+    }
+    memset(buffer, 0, FIP_MSG_SIZE);
+    if (fread(buffer, 1, msg_len, stdin) != msg_len) {
+        return false;
+    }
+    return true;
 }
 
 toml_result_t fip_slave_load_config( //
     const uint32_t id,               //
     const char *module_name          //
 ) {
+    char file_path[64] = {0};
+    snprintf(file_path, sizeof(file_path), ".fip/config/%s.toml", module_name);
     toml_result_t toml = {0};
+    toml.ok = false;
+    FILE *fp = fopen(file_path, "r");
+    if (!fp) {
+        fip_print(id, FIP_ERROR, "Config file not found: %s", file_path);
+        return toml;
+    }
+    toml = toml_parse_file(fp);
+    fclose(fp);
+    if (!toml.ok) {
+        fip_print(id, FIP_ERROR, "Failed to parse %s.toml file: %s",
+            module_name, toml.errmsg);
+        return toml;
+    }
     return toml;
 }
 
-#endif // End of Windows SLAVE Implemntation
+#endif // End of Windows SLAVE Implementation
 
 #else // End of Windows Implementation
 
@@ -1608,7 +1822,7 @@ uint8_t fip_master_await_responses(        //
 
         FD_ZERO(&read_fds);
         FD_SET(fd, &read_fds);
-        timeout.tv_sec = 3; // 3 second timeout
+        timeout.tv_sec = 1; // 1 second timeout
         timeout.tv_usec = 0;
 
         int activity = select(fd + 1, &read_fds, NULL, NULL, &timeout);
@@ -1772,8 +1986,8 @@ toml_result_t fip_slave_load_config( //
     const uint32_t id,               //
     const char *module_name          //
 ) {
-    char file_path[32] = {0};
-    snprintf(file_path, 32, ".fip/config/%s.toml", module_name);
+    char file_path[64] = {0};
+    snprintf(file_path, sizeof(file_path), ".fip/config/%s.toml", module_name);
     toml_result_t toml = {0};
     toml.ok = false;
     FILE *fp = fopen(file_path, "r");
@@ -1783,7 +1997,6 @@ toml_result_t fip_slave_load_config( //
     }
     toml = toml_parse_file(fp);
     fclose(fp);
-    // Check for parse error
     if (!toml.ok) {
         fip_print(id, FIP_ERROR, "Failed to parse %s.toml file: %s",
             module_name, toml.errmsg);
