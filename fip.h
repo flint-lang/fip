@@ -871,7 +871,8 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             buffer[idx++] = message->u.kill.reason;
             break;
     }
-    *(uint32_t *)(&buffer[0]) = idx - 4;
+    uint32_t msg_len = idx - 4;
+    memcpy(&buffer[0], &msg_len, sizeof(uint32_t));
 }
 
 void fip_decode_type(                //
@@ -1256,7 +1257,8 @@ void fip_master_broadcast_message( //
     fip_print(0, FIP_INFO, "Broadcasting message to %d slaves",
         master_state.slave_count);
     fip_encode_msg(buffer, message);
-    uint32_t msg_len = *(uint32_t *)buffer;
+    uint32_t msg_len;
+    memcpy(&msg_len, buffer, sizeof(uint32_t));
 
     for (uint32_t i = 0; i < master_state.slave_count; i++) {
         if (master_state.slave_stdin[i]) {
@@ -1358,7 +1360,8 @@ void fip_slave_send_message(   //
     const fip_msg_t *message   //
 ) {
     fip_encode_msg(buffer, message);
-    uint32_t msg_len = *(uint32_t *)buffer;
+    uint32_t msg_len;
+    memcpy(&msg_len, buffer, sizeof(uint32_t));
     size_t written_bytes = fwrite(buffer, 1, msg_len + 4, stdout);
     if (written_bytes != msg_len + 4) {
         fip_print(id, FIP_ERROR, "Failed to write message");
