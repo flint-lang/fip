@@ -269,6 +269,7 @@ typedef struct {
 /// @brief Struct representing the object response message
 typedef struct {
     bool has_obj;
+    bool compilation_failed;
     char module_name[FIP_MAX_MODULE_NAME_LEN];
     char paths[FIP_PATHS_SIZE];
 } fip_msg_object_response_t;
@@ -861,6 +862,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             // The sizes of the buffers are known so we can put them into the
             // buffer directly
             buffer[idx++] = message->u.obj_res.has_obj;
+            buffer[idx++] = message->u.obj_res.compilation_failed;
             memcpy(buffer + idx, message->u.obj_res.module_name,
                 FIP_MAX_MODULE_NAME_LEN);
             idx += 16;
@@ -1004,6 +1006,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             // The sizes of the buffers are known so we can put them into the
             // buffer directly
             message->u.obj_res.has_obj = (bool)buffer[idx++];
+            message->u.obj_res.compilation_failed = (bool)buffer[idx++];
             memcpy(message->u.obj_res.module_name, buffer + idx, 16);
             idx += 16;
             memcpy(message->u.obj_res.paths, buffer + idx, FIP_PATHS_SIZE);

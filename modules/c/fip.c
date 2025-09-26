@@ -692,6 +692,7 @@ void handle_compile_request(   //
     response.type = FIP_MSG_OBJECT_RESPONSE;
     fip_msg_object_response_t *obj_res = &response.u.obj_res;
     obj_res->has_obj = false;
+    obj_res->compilation_failed = false;
     strncpy(obj_res->module_name, MODULE_NAME,
         sizeof(obj_res->module_name) - 1);
     obj_res->module_name[sizeof(obj_res->module_name) - 1] = '\0';
@@ -704,6 +705,7 @@ void handle_compile_request(   //
                     obj_res->paths, symbols[i].source_file_path, message) //
             ) {
                 obj_res->has_obj = false;
+                obj_res->compilation_failed = true;
                 break;
             }
             obj_res->has_obj = true;
