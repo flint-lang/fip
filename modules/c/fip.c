@@ -655,31 +655,32 @@ bool compile_file(                                    //
 
     fip_print(ID, FIP_INFO, "Executing: %s", compile_cmd);
 
-    if (system(compile_cmd) == 0) {
-        fip_print(ID, FIP_INFO, "Compiled '%.8s' successfully", hash);
-        // Add to paths array. For this we need to find the first null-byte
-        // character in the paths array, that's where we will place our hash at.
-        // The good thing is that we only need to check multiples of 8 so this
-        // check is rather easy.
-        char *dest = paths;
-        uint16_t occupied_bytes = 0;
-        while (*dest != '\0' && occupied_bytes < FIP_PATHS_SIZE) {
-            dest += 8;
-            occupied_bytes += 8;
-        }
-        if (occupied_bytes >= FIP_PATHS_SIZE) {
-            fip_print(                                          //
-                ID, FIP_ERROR, "The Paths array is full: %.*s", //
-                FIP_PATHS_SIZE, paths                           //
-            );
-            fip_print(ID, FIP_ERROR, "Could not store hash '%s' in it", hash);
-            return false;
-        }
-        memcpy(dest, hash, 8);
-        return true;
+    if (system(compile_cmd) != 0) {
+        fip_print(ID, FIP_ERROR, "Compiling file '%s' failed", file_path);
+        return false;
     }
 
-    return false;
+    fip_print(ID, FIP_INFO, "Compiled '%.8s' successfully", hash);
+    // Add to paths array. For this we need to find the first null-byte
+    // character in the paths array, that's where we will place our hash at.
+    // The good thing is that we only need to check multiples of 8 so this
+    // check is rather easy.
+    char *dest = paths;
+    uint16_t occupied_bytes = 0;
+    while (*dest != '\0' && occupied_bytes < FIP_PATHS_SIZE) {
+        dest += 8;
+        occupied_bytes += 8;
+    }
+    if (occupied_bytes >= FIP_PATHS_SIZE) {
+        fip_print(                                          //
+            ID, FIP_ERROR, "The Paths array is full: %.*s", //
+            FIP_PATHS_SIZE, paths                           //
+        );
+        fip_print(ID, FIP_ERROR, "Could not store hash '%s' in it", hash);
+        return false;
+    }
+    memcpy(dest, hash, 8);
+    return true;
 }
 
 void handle_compile_request(   //
