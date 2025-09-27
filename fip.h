@@ -91,7 +91,7 @@ extern int clock_gettime(clockid_t clk_id, struct timespec *tp);
 #define FIP_PATCH 1
 
 #define FIP_TYPE_COUNT 12
-#define FIP_MAX_MODULE_NAME_LEN 32
+#define FIP_MAX_MODULE_NAME_LEN 16
 
 /// @typedef `fip_type_prim_enum_t`
 /// @brief Enum of all possible primitive types supported by FIP
@@ -263,6 +263,7 @@ typedef struct {
     } target;
 } fip_msg_compile_request_t;
 
+#define FIP_PATH_SIZE 8
 #define FIP_PATHS_SIZE FIP_MSG_SIZE - 32
 
 /// @typedef `fip_msg_object_response_t`
@@ -271,6 +272,7 @@ typedef struct {
     bool has_obj;
     bool compilation_failed;
     char module_name[FIP_MAX_MODULE_NAME_LEN];
+    uint8_t path_count;
     char paths[FIP_PATHS_SIZE];
 } fip_msg_object_response_t;
 
@@ -814,6 +816,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             buffer[idx++] = message->u.con_req.version.patch;
             memcpy(buffer + idx, message->u.con_req.module_name,
                 FIP_MAX_MODULE_NAME_LEN);
+            idx += FIP_MAX_MODULE_NAME_LEN;
             break;
         case FIP_MSG_SYMBOL_REQUEST:
             buffer[idx++] = message->u.sym_req.type;
@@ -833,7 +836,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             buffer[idx++] = message->u.sym_res.found;
             memcpy(buffer + idx, message->u.sym_res.module_name,
                 FIP_MAX_MODULE_NAME_LEN);
-            idx += 16;
+            idx += FIP_MAX_MODULE_NAME_LEN;
             buffer[idx++] = message->u.sym_res.type;
             switch (message->u.sym_res.type) {
                 case FIP_SYM_UNKNOWN:
@@ -857,6 +860,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             memcpy(buffer + idx, message->u.com_req.target.sys, 16);
             idx += 16;
             memcpy(buffer + idx, message->u.com_req.target.abi, 16);
+            idx += 16;
             break;
         case FIP_MSG_OBJECT_RESPONSE:
             // The sizes of the buffers are known so we can put them into the
@@ -865,8 +869,12 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             buffer[idx++] = message->u.obj_res.compilation_failed;
             memcpy(buffer + idx, message->u.obj_res.module_name,
                 FIP_MAX_MODULE_NAME_LEN);
-            idx += 16;
-            memcpy(buffer + idx, message->u.obj_res.paths, FIP_PATHS_SIZE);
+            idx += FIP_MAX_MODULE_NAME_LEN;
+            const uint8_t path_count = message->u.obj_res.path_count;
+            buffer[idx++] = path_count;
+            const uint32_t offset = FIP_PATH_SIZE * path_count;
+            memcpy(buffer + idx, message->u.obj_res.paths, offset);
+            idx += offset;
             break;
         case FIP_MSG_KILL:
             // The kill message just adds why the kill happens
@@ -977,7 +985,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             message->u.sym_res.found = (bool)buffer[idx++];
             memcpy(message->u.sym_res.module_name, buffer + idx,
                 FIP_MAX_MODULE_NAME_LEN);
-            idx += 16;
+            idx += FIP_MAX_MODULE_NAME_LEN;
             message->u.sym_res.type = (fip_msg_symbol_type_t)buffer[idx++];
             switch (message->u.sym_res.type) {
                 case FIP_SYM_UNKNOWN:
@@ -1003,13 +1011,17 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             memcpy(message->u.com_req.target.abi, buffer + idx, 16);
             break;
         case FIP_MSG_OBJECT_RESPONSE:
-            // The sizes of the buffers are known so we can put them into the
+            // The sizes of the buffers are known so we can read them from the
             // buffer directly
             message->u.obj_res.has_obj = (bool)buffer[idx++];
             message->u.obj_res.compilation_failed = (bool)buffer[idx++];
-            memcpy(message->u.obj_res.module_name, buffer + idx, 16);
-            idx += 16;
-            memcpy(message->u.obj_res.paths, buffer + idx, FIP_PATHS_SIZE);
+            memcpy(message->u.obj_res.module_name, buffer + idx,
+                FIP_MAX_MODULE_NAME_LEN);
+            idx += FIP_MAX_MODULE_NAME_LEN;
+            const uint8_t path_count = buffer[idx++];
+            message->u.obj_res.path_count = path_count;
+            const uint32_t offset = FIP_PATH_SIZE * path_count;
+            memcpy(message->u.obj_res.paths, buffer + idx, offset);
             break;
         case FIP_MSG_KILL:
             // The kill message just adds why the kill happens
