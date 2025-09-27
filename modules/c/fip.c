@@ -608,6 +608,7 @@ void handle_symbol_request(    //
 }
 
 bool compile_file(                                    //
+    uint8_t *path_count,                              //
     char paths[FIP_PATHS_SIZE],                       //
     const char *file_path,                            //
     [[maybe_unused]] const fip_msg_t *compile_message //
@@ -621,9 +622,10 @@ bool compile_file(                                    //
     // file paths / hashes can fit inside the paths array!
     //
     // We need to know the hash before even compiling the file at all
-    char hash[9] = {0};
+    char hash[FIP_PATH_SIZE + 1] = {0};
     fip_create_hash(hash, file_path);
-    hash[8] = '\0'; // This is only needed for the below strstr function
+    // This is only needed for the below strstr function
+    hash[FIP_PATH_SIZE] = '\0';
 
     // Check if the hash is already part of the paths, if it is we already
     // compiled the file
@@ -665,13 +667,11 @@ bool compile_file(                                    //
     // character in the paths array, that's where we will place our hash at.
     // The good thing is that we only need to check multiples of 8 so this
     // check is rather easy.
-    char *dest = paths;
-    uint16_t occupied_bytes = 0;
-    while (*dest != '\0' && occupied_bytes < FIP_PATHS_SIZE) {
-        dest += 8;
-        occupied_bytes += 8;
-    }
-    if (occupied_bytes >= FIP_PATHS_SIZE) {
+    // Because we know how many paths there already are in the paths string we
+    // can just offset by path_count * FIP_PATH_SIZE and increment path_count
+    // afterwards, as simple as that
+    const uint16_t offset = *path_count * FIP_PATH_SIZE;
+    if (offset >= FIP_PATHS_SIZE) {
         fip_print(                                          //
             ID, FIP_ERROR, "The Paths array is full: %.*s", //
             FIP_PATHS_SIZE, paths                           //
@@ -679,7 +679,8 @@ bool compile_file(                                    //
         fip_print(ID, FIP_ERROR, "Could not store hash '%s' in it", hash);
         return false;
     }
-    memcpy(dest, hash, 8);
+    memcpy(paths + offset, hash, FIP_PATH_SIZE);
+    (*path_count)++;
     return true;
 }
 
@@ -702,8 +703,9 @@ void handle_compile_request(   //
     // compiled
     for (uint32_t i = 0; i < symbol_count; i++) {
         if (symbols[i].needed) {
-            if (!compile_file(                                            //
-                    obj_res->paths, symbols[i].source_file_path, message) //
+            if (!compile_file(                            //
+                    &obj_res->path_count, obj_res->paths, //
+                    symbols[i].source_file_path, message) //
             ) {
                 obj_res->has_obj = false;
                 obj_res->compilation_failed = true;
