@@ -862,7 +862,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             memcpy(buffer + idx, message->u.com_req.target.abi, 16);
             idx += 16;
             break;
-        case FIP_MSG_OBJECT_RESPONSE:
+        case FIP_MSG_OBJECT_RESPONSE: {
             // The sizes of the buffers are known so we can put them into the
             // buffer directly
             buffer[idx++] = message->u.obj_res.has_obj;
@@ -876,6 +876,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             memcpy(buffer + idx, message->u.obj_res.paths, offset);
             idx += offset;
             break;
+        }
         case FIP_MSG_KILL:
             // The kill message just adds why the kill happens
             buffer[idx++] = message->u.kill.reason;
@@ -1010,7 +1011,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             idx += 16;
             memcpy(message->u.com_req.target.abi, buffer + idx, 16);
             break;
-        case FIP_MSG_OBJECT_RESPONSE:
+        case FIP_MSG_OBJECT_RESPONSE: {
             // The sizes of the buffers are known so we can read them from the
             // buffer directly
             message->u.obj_res.has_obj = (bool)buffer[idx++];
@@ -1023,6 +1024,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             const uint32_t offset = FIP_PATH_SIZE * path_count;
             memcpy(message->u.obj_res.paths, buffer + idx, offset);
             break;
+        }
         case FIP_MSG_KILL:
             // The kill message just adds why the kill happens
             message->u.kill.reason = (fip_msg_kill_reason_t)buffer[idx++];
