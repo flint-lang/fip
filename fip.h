@@ -675,6 +675,7 @@ void fip_print(                      //
         return;
     }
     char prefix[64];
+    memset(prefix, 0, 64);
     va_list args;
 
     const char *RED = "\033[31m";
