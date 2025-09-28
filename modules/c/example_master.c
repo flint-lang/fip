@@ -125,8 +125,8 @@ kill:
     msg.u.kill.reason = FIP_KILL_FINISH;
     fip_master_broadcast_message(msg_buf, &msg);
 
-    // Clean up
-    nanosleep(&(struct timespec){.tv_sec = 0, .tv_nsec = 100000000}, NULL);
+    // Clean up after 100ms
+    msleep(100);
     fip_master_cleanup();
     fip_terminate_all_slaves(&interop_modules); // Fallback cleanup
 

@@ -83,7 +83,24 @@ extern int clock_gettime(clockid_t clk_id, struct timespec *tp);
 
 #define FIP_MAX_SLAVES 64
 #define FIP_MSG_SIZE 1024
-#define FIP_SLAVE_DELAY 1000000 // in nanoseconds
+#define FIP_SLAVE_DELAY_MS 10
+
+#ifdef __WIN32__
+#include <windows.h>
+[[maybe_unused]]
+static void msleep(unsigned int ms) {
+    Sleep(ms);
+}
+#else
+[[maybe_unused]]
+static void msleep(unsigned int ms) {
+    struct timespec ts;
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000L;
+    /* nanosleep may be interrupted; ignore remaining time for simplicity */
+    nanosleep(&ts, NULL);
+}
+#endif
 
 // The version of the FIP
 #define FIP_MAJOR 0
