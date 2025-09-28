@@ -1,4 +1,5 @@
 -I./
+-I../flintc/vendor/llvm-linux/include
 -std=c
 //-fno-exceptions
 -funwind-tables
