@@ -674,88 +674,44 @@ void fip_print(                      //
     if (!format) {
         return;
     }
+    // Buffer for the whole message to fit into
+    char message[4096];
+    memset(message, 0, sizeof(message));
     char prefix[64];
-    memset(prefix, 0, 64);
-    va_list args;
+    memset(prefix, 0, sizeof(prefix));
 
-    const char *RED = "\033[31m";
-    const char *YELLOW = "\033[33m";
-    const char *WHITE = "\033[37m";
-    const char *GREY = "\033[90m";
-    // const char *CYAN = "\033[36m";
-    const char *DEFAULT = "\033[0m";
+    // ANSI color constants
+    static const char *const colors[] = {
+        [FIP_ERROR] = "\033[31m", // RED
+        [FIP_WARN] = "\033[33m",  // YELLOW
+        [FIP_INFO] = "\033[0m",   // DEFAULT
+        [FIP_DEBUG] = "\033[37m", // WHITE
+        [FIP_TRACE] = "\033[90m"  // GREY
+    };
 
-    // Create the prefix. The color of the prefix direclty determines the log
-    // level
-    // FIP_ERROR = RED
-    // FIP_WARN = YELLOW
-    // FIP_INFO = DEFUALT
-    // FIP_DEBUG = WHITE
-    // FIP_TRACE = GREY
+    // Build prefix
     if (id == 0) {
-        switch (log_level) {
-            case FIP_NONE:
-                assert(false);
-                break;
-            case FIP_ERROR:
-                snprintf(prefix, sizeof(prefix), "[%sMaster%s]:  ", RED,
-                    DEFAULT);
-                break;
-            case FIP_WARN:
-                snprintf(prefix, sizeof(prefix), "[%sMaster%s]:  ", YELLOW,
-                    DEFAULT);
-                break;
-            case FIP_INFO:
-                snprintf(prefix, sizeof(prefix), "[%sMaster%s]:  ", DEFAULT,
-                    DEFAULT);
-                break;
-            case FIP_DEBUG:
-                snprintf(prefix, sizeof(prefix), "[%sMaster%s]:  ", WHITE,
-                    DEFAULT);
-                break;
-            case FIP_TRACE:
-                snprintf(prefix, sizeof(prefix), "[%sMaster%s]:  ", GREY,
-                    DEFAULT);
-                break;
-        }
+        snprintf(                   //
+            prefix, sizeof(prefix), //
+            "[%sMaster\033[0m]:  ", //
+            colors[log_level]       //
+        );
     } else {
-        switch (log_level) {
-            case FIP_NONE:
-                assert(false);
-                break;
-            case FIP_ERROR:
-                snprintf(prefix, sizeof(prefix), "[%sSlave %u%s]: ", RED, id,
-                    DEFAULT);
-                break;
-            case FIP_WARN:
-                snprintf(prefix, sizeof(prefix), "[%sSlave %u%s]: ", YELLOW, id,
-                    DEFAULT);
-                break;
-            case FIP_INFO:
-                snprintf(prefix, sizeof(prefix), "[%sSlave %u%s]: ", DEFAULT,
-                    id, DEFAULT);
-                break;
-            case FIP_DEBUG:
-                snprintf(prefix, sizeof(prefix), "[%sSlave %u%s]: ", WHITE, id,
-                    DEFAULT);
-                break;
-            case FIP_TRACE:
-                snprintf(prefix, sizeof(prefix), "[%sSlave %u%s]: ", GREY, id,
-                    DEFAULT);
-                break;
-        }
+        snprintf(                    //
+            prefix, sizeof(prefix),  //
+            "[%sSlave %u\033[0m]: ", //
+            colors[log_level], id    //
+        );
     }
 
-    // Print prefix first to stderr
-    fprintf(stderr, "%s", prefix);
-
-    // Print the formatted message to stderr
+    // Print the formatted message into the message buffer
+    va_list args;
     va_start(args, format);
-    vfprintf(stderr, format, args);
+    vsnprintf(message, sizeof(message), format, args);
     va_end(args);
 
-    // Add newline to stderr
-    fprintf(stderr, "\n");
+    // Print the prefix and the message to stderr
+    fprintf(stderr, "%s%s\n", prefix, message);
     fflush(stderr);
 }
 
@@ -1304,8 +1260,8 @@ void fip_master_broadcast_message( //
                     i + 1);
                 continue;
             }
-            fflush(master_state.slave_stdin[i]);
             fip_print(0, FIP_DEBUG, "Sent message to slave %d", i + 1);
+            fflush(master_state.slave_stdin[i]);
         }
     }
 }
@@ -1402,8 +1358,8 @@ void fip_slave_send_message(   //
         fip_print(id, FIP_ERROR, "Failed to write message");
         return;
     }
-    fflush(stdout);
     fip_print(id, FIP_INFO, "Successfully sent message of %u bytes", msg_len);
+    fflush(stdout);
 }
 
 void fip_slave_cleanup() {
