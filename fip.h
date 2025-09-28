@@ -682,11 +682,12 @@ void fip_print(                      //
 
     // ANSI color constants
     static const char *const colors[] = {
-        [FIP_ERROR] = "\033[31m", // RED
-        [FIP_WARN] = "\033[33m",  // YELLOW
-        [FIP_INFO] = "\033[0m",   // DEFAULT
-        [FIP_DEBUG] = "\033[37m", // WHITE
-        [FIP_TRACE] = "\033[90m"  // GREY
+        "",         // FIP_NONE = nothing
+        "\033[31m", // FIP_ERROR = RED
+        "\033[33m", // FIP_WARN = YELLOW
+        "\033[0m",  // FIP_INFO = DEFAULT
+        "\033[37m", // FIP_DEBUG = WHITE
+        "\033[90m"  // FIP_TRACE = GREY
     };
 
     // Build prefix
