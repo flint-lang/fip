@@ -806,10 +806,7 @@ send:
     // Main loop - wait for messages from master
     bool is_running = true;
     while (is_running) {
-        struct timespec start_time;
-        clock_gettime(CLOCK_MONOTONIC, &start_time);
-
-        if (fip_slave_receive_message(msg_buf)) {
+                if (fip_slave_receive_message(msg_buf)) {
             // Only print the first time we receive a message
             fip_print(ID, FIP_DEBUG, "Received message");
             fip_msg_t message = {0};
@@ -850,19 +847,8 @@ send:
             fip_free_msg(&message);
         }
 
-        // Calculate elapsed time and adjust sleep to maintain 1ms intervals
-        struct timespec end_time;
-        clock_gettime(CLOCK_MONOTONIC, &end_time);
-        long elapsed_ns = (end_time.tv_sec - start_time.tv_sec) * 1000000000 +
-            (end_time.tv_nsec - start_time.tv_nsec);
-
-        long remaining_ns = FIP_SLAVE_DELAY - elapsed_ns;
-        if (remaining_ns > 0) {
-            nanosleep(                                                    //
-                &(struct timespec){.tv_sec = 0, .tv_nsec = remaining_ns}, //
-                NULL                                                      //
-            );
-        }
+        // Just wait for N milliseconds before the new loop iteration
+        msleep(FIP_SLAVE_DELAY_MS);
     }
 
 kill:
