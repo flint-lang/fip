@@ -10,6 +10,11 @@ fip_log_level_t LOG_LEVEL = FIP_INFO;
 #include <stdlib.h>
 #include <time.h>
 
+#ifdef _WIN32
+#include <fcntl.h> // _O_BINARY
+#include <io.h>    // _setmode, _fileno
+#endif
+
 /*
  * ==============================================
  * THIS IS THE `fip-c` INTEROP MODULE SOURCE CODE
@@ -719,6 +724,12 @@ void handle_compile_request(   //
 }
 
 int main(int argc, char *argv[]) {
+#ifdef _WIN32
+    // Disable CRLF <-> LF translations so FIP messages are sent as raw bytes.
+    // Must be done before any FIP stdio I/O happens.
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stdin), _O_BINARY);
+#endif
     if (argc < 2) {
         printf("The '%s' Interop Module needs at least one argument\n",
             MODULE_NAME);
@@ -806,7 +817,7 @@ send:
     // Main loop - wait for messages from master
     bool is_running = true;
     while (is_running) {
-                if (fip_slave_receive_message(msg_buf)) {
+        if (fip_slave_receive_message(msg_buf)) {
             // Only print the first time we receive a message
             fip_print(ID, FIP_DEBUG, "Received message");
             fip_msg_t message = {0};
