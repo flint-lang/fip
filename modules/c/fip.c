@@ -673,19 +673,49 @@ bool compile_file(                                    //
             strcat(compile_flags, " ");
         }
     }
-    // Add source and output
-    char output_path[64] = {0};
-    snprintf(output_path, sizeof(output_path), ".fip/cache/%.8s.o", hash);
 
+    // Determine if we're using MSVC or GCC/Clang
+    bool is_msvc = ( //
+        (strstr(CONFIG.compiler, "cl") != NULL &&
+            strstr(CONFIG.compiler, "clang") == NULL) ||
+        strstr(CONFIG.compiler, "cl.exe") != NULL);
+
+#ifdef __WIN32__
+    const char *file_extension = "obj";
+#else
+    const char *file_extension = "o";
+#endif
+
+    char output_path[64] = {0};
     char compile_cmd[1024] = {0};
-    int ret =
-        snprintf(compile_cmd, sizeof(compile_cmd), "%s -x c -c %s %s -o %s",
-            CONFIG.compiler, compile_flags, file_path, output_path);
+    int ret;
+
+    if (is_msvc) {
+        // MSVC (cl.exe) flags
+        snprintf(output_path, sizeof(output_path), ".fip/cache/%.8s.%s", hash,
+            file_extension);
+        ret = snprintf(compile_cmd, sizeof(compile_cmd),
+            "%s /TC /c %s \"%s\" /Fo\"%s\"", CONFIG.compiler, compile_flags,
+            file_path, output_path);
+        // /TC = treat all files as C source files
+        // /c = compile only, don't link
+        // /Fo = specify output object file name
+    } else {
+        // GCC/Clang flags
+        snprintf(output_path, sizeof(output_path), ".fip/cache/%.8s.%s", hash,
+            file_extension);
+        ret = snprintf(compile_cmd, sizeof(compile_cmd),
+            "%s -x c -c %s \"%s\" -o \"%s\"", CONFIG.compiler, compile_flags,
+            file_path, output_path);
+        // -x c = treat file as C source
+        // -c = compile only, don't link
+        // -o = specify output file
+    }
+
     if (ret >= (int)sizeof(compile_cmd)) {
         fip_print(ID, FIP_ERROR, "Compile command too long, truncated");
         return false;
     }
-
     fip_print(ID, FIP_INFO, "Executing: %s", compile_cmd);
 
     char *compile_output = NULL;
