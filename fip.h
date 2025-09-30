@@ -60,8 +60,10 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <spawn.h>
+#include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -461,6 +463,7 @@ typedef struct {
 typedef struct {
     FILE *slave_stdin[FIP_MAX_SLAVES];
     FILE *slave_stdout[FIP_MAX_SLAVES];
+    FILE *slave_stderr[FIP_MAX_SLAVES];
     uint32_t slave_count;
     fip_msg_t responses[FIP_MAX_SLAVES];
     uint32_t response_count;
@@ -476,6 +479,21 @@ typedef struct {
 extern char **environ;
 #endif
 extern fip_master_state_t master_state;
+
+/// @function `fip_copy_stream_lines`
+/// @brief Copies all lines from the `src` stream into the `dest` stream. Only
+/// copies full lines, and copies the lines as one unit. So, all leftover
+/// characters are, well, left, in the `src` and only full lines are written to
+/// `dest`
+///
+/// @param `src` The source stream from which lines are read
+/// @param `dest` The destination stream to which lines are copied to
+void fip_copy_stream_lines(FILE *src, FILE *dest);
+
+/// @function `fip_print_slave_streams`
+/// @brief Prints all the `stderr` streams from all slaves into the `stderr`
+/// stream of the master, to gather all the debug output from all slaves
+void fip_print_slave_streams();
 
 /// @function `fip_spawn_interop_module`
 /// @brief Creates a new interop module and adds it's process ID to the list of
@@ -1242,6 +1260,70 @@ void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
 
 #ifdef FIP_MASTER
 
+#define FIP_LINE_BUF_SIZE 4096
+
+void fip_copy_stream_lines(FILE *src, FILE *dest) {
+    if (!src || !dest) {
+        fprintf(stderr, "fip_copy_stream_lines: NULL argument\n");
+        abort();
+    }
+
+    char buffer[FIP_LINE_BUF_SIZE];
+
+#ifdef __WIN32__
+    // Windows approach - check if data is available
+    HANDLE handle = (HANDLE)_get_osfhandle(fileno(src));
+    if (handle == INVALID_HANDLE_VALUE) {
+        return; // Can't get handle, just return
+    }
+
+    DWORD bytes_available = 0;
+    DWORD bytes_read = 0;
+
+    // For pipes, check if data is available
+    if (PeekNamedPipe(handle, NULL, 0, NULL, &bytes_available, NULL)) {
+        if (bytes_available > 0) {
+            // Data is available, read it
+            size_t to_read = (bytes_available < sizeof(buffer) - 1)
+                ? bytes_available
+                : sizeof(buffer) - 1;
+            if (ReadFile(handle, buffer, to_read, &bytes_read, NULL)) {
+                buffer[bytes_read] = '\0';
+                fputs(buffer, dest);
+                fflush(dest);
+            }
+        }
+    }
+#else
+    // Linux approach - use fcntl
+    int fd = fileno(src);
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags != -1) {
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+        ssize_t bytes_read;
+        while ((bytes_read = read(fd, buffer, sizeof(buffer) - 1)) > 0) {
+            buffer[bytes_read] = '\0';
+            fputs(buffer, dest);
+            fflush(dest);
+        }
+
+        // Restore original flags
+        fcntl(fd, F_SETFL, flags);
+    }
+#endif
+
+    // Clear any error flags
+    clearerr(src);
+}
+
+void fip_print_slave_streams() {
+    fip_print(0, FIP_INFO, "FIP_PRINT_SLAVE_STREAMS\n");
+    for (uint32_t i = 0; i < master_state.slave_count; i++) {
+        fip_copy_stream_lines(master_state.slave_stderr[i], stderr);
+    }
+}
+
 void fip_master_broadcast_message( //
     char buffer[FIP_MSG_SIZE],     //
     const fip_msg_t *message       //
@@ -1389,6 +1471,7 @@ typedef struct {
     HANDLE process;
     HANDLE stdin_write;
     HANDLE stdout_read;
+    HANDLE stderr_read;
     pid_t pid; // For compatibility with existing code
 } win_process_info_t;
 
@@ -1411,10 +1494,12 @@ bool fip_spawn_interop_module(      //
     // Create pipes for communication
     HANDLE stdin_read, stdin_write;
     HANDLE stdout_read, stdout_write;
+    HANDLE stderr_read, stderr_write;
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
 
     if (!CreatePipe(&stdin_read, &stdin_write, &sa, 0) ||
-        !CreatePipe(&stdout_read, &stdout_write, &sa, 0)) {
+        !CreatePipe(&stdout_read, &stdout_write, &sa, 0) ||
+        !CreatePipe(&stderr_read, &stderr_write, &sa, 0)) {
         fip_print(0, FIP_ERROR, "Failed to create pipes for slave %s", id);
         return false;
     }
@@ -1422,6 +1507,7 @@ bool fip_spawn_interop_module(      //
     // Make sure parent handles are not inherited
     SetHandleInformation(stdin_write, HANDLE_FLAG_INHERIT, 0);
     SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(stderr_write, HANDLE_FLAG_INHERIT, 0);
 
     // Create command line
     char cmdline[512];
@@ -1433,7 +1519,7 @@ bool fip_spawn_interop_module(      //
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdInput = stdin_read;
     si.hStdOutput = stdout_write;
-    si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+    si.hStdError = stderr_write;
 
     if (!CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si,
             &pi)) {
@@ -1443,18 +1529,22 @@ bool fip_spawn_interop_module(      //
         CloseHandle(stdin_write);
         CloseHandle(stdout_read);
         CloseHandle(stdout_write);
+        CloseHandle(stderr_read);
+        CloseHandle(stderr_write);
         return false;
     }
 
     // Close child's ends of pipes
     CloseHandle(stdin_read);
     CloseHandle(stdout_write);
+    CloseHandle(stderr_write);
     CloseHandle(pi.hThread);
 
     // Store process info
     win_processes[modules->active_count].process = pi.hProcess;
     win_processes[modules->active_count].stdin_write = stdin_write;
     win_processes[modules->active_count].stdout_read = stdout_read;
+    win_processes[modules->active_count].stderr_read = stderr_read;
     win_processes[modules->active_count].pid = pi.dwProcessId;
 
     // Store PID in the modules array for compatibility
@@ -1465,9 +1555,12 @@ bool fip_spawn_interop_module(      //
         _open_osfhandle((intptr_t)stdin_write, _O_WRONLY | _O_BINARY);
     int stdout_fd =
         _open_osfhandle((intptr_t)stdout_read, _O_RDONLY | _O_BINARY);
+    int stderr_fd =
+        _open_osfhandle((intptr_t)stderr_read, _O_RDONLY | _O_BINARY);
 
     master_state.slave_stdin[modules->active_count] = _fdopen(stdin_fd, "wb");
     master_state.slave_stdout[modules->active_count] = _fdopen(stdout_fd, "rb");
+    master_state.slave_stderr[modules->active_count] = _fdopen(stderr_fd, "rb");
 
     if (!master_state.slave_stdin[modules->active_count] ||
         !master_state.slave_stdout[modules->active_count]) {
@@ -1558,6 +1651,8 @@ uint8_t fip_master_await_responses(        //
             break;
     }
 
+    // Print all the debug output of all the slaves
+    fip_print_slave_streams();
     return wrong_count;
 }
 
@@ -1708,8 +1803,11 @@ bool fip_spawn_interop_module(      //
                         // stdin_pipe[0]
     int stdout_pipe[2]; // slave writes to stdout_pipe[1], master reads from
                         // stdout_pipe[0]
+    int stderr_pipe[2]; // slave writes to stderr_pipe[1], master reads from
+                        // stderr_pipe[0]
 
-    if (pipe(stdin_pipe) == -1 || pipe(stdout_pipe) == -1) {
+    if (pipe(stdin_pipe) == -1 || pipe(stdout_pipe) == -1 ||
+        pipe(stderr_pipe) == -1) {
         fip_print(0, FIP_ERROR, "Failed to create pipes for slave %s", id);
         return false;
     }
@@ -1726,6 +1824,10 @@ bool fip_spawn_interop_module(      //
     posix_spawn_file_actions_adddup2(&actions, stdout_pipe[1], STDOUT_FILENO);
     posix_spawn_file_actions_addclose(&actions, stdout_pipe[0]);
 
+    // Redirect slave's stderr to write to our stderr_pipe
+    posix_spawn_file_actions_adddup2(&actions, stderr_pipe[1], STDERR_FILENO);
+    posix_spawn_file_actions_addclose(&actions, stderr_pipe[0]);
+
     int status = posix_spawn(&modules->pids[modules->active_count], _module,
         &actions, // Use file actions
         NULL,     // No special attributes
@@ -1739,6 +1841,8 @@ bool fip_spawn_interop_module(      //
         close(stdin_pipe[1]);
         close(stdout_pipe[0]);
         close(stdout_pipe[1]);
+        close(stderr_pipe[0]);
+        close(stderr_pipe[1]);
         return false;
     }
 
@@ -1746,15 +1850,19 @@ bool fip_spawn_interop_module(      //
     // process)
     close(stdin_pipe[0]);
     close(stdout_pipe[1]);
+    close(stderr_pipe[1]);
 
     // Store master's ends of the pipes
     master_state.slave_stdin[modules->active_count] =
         fdopen(stdin_pipe[1], "w");
     master_state.slave_stdout[modules->active_count] =
         fdopen(stdout_pipe[0], "r");
+    master_state.slave_stderr[modules->active_count] =
+        fdopen(stderr_pipe[0], "r");
 
     if (!master_state.slave_stdin[modules->active_count] ||
-        !master_state.slave_stdout[modules->active_count]) {
+        !master_state.slave_stdout[modules->active_count] ||
+        !master_state.slave_stderr[modules->active_count]) {
         fip_print(0, FIP_ERROR, "Failed to create FILE streams for slave %s",
             id);
         return false;
@@ -1872,6 +1980,8 @@ uint8_t fip_master_await_responses(        //
         }
     }
 
+    // Print all the debug output of all the slaves
+    fip_print_slave_streams();
     return wrong_count;
 }
 
