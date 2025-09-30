@@ -618,6 +618,32 @@ bool compile_file(                                    //
     const char *file_path,                            //
     [[maybe_unused]] const fip_msg_t *compile_message //
 ) {
+    // Ensure .fip/cache directory exists
+#ifdef __WIN32__
+    if (CreateDirectoryA(".fip", NULL) ||
+        GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (!CreateDirectoryA(".fip/cache", NULL) &&
+            GetLastError() != ERROR_ALREADY_EXISTS) {
+            fip_print(ID, FIP_ERROR, "Failed to create .fip/cache directory");
+            return false;
+        }
+    } else {
+        fip_print(ID, FIP_ERROR, "Failed to create .fip directory");
+        return false;
+    }
+#else
+    if (mkdir(".fip", 0755) != 0 && errno != EEXIST) {
+        fip_print(ID, FIP_ERROR, "Failed to create .fip directory: %s",
+            strerror(errno));
+        return false;
+    }
+    if (mkdir(".fip/cache", 0755) != 0 && errno != EEXIST) {
+        fip_print(ID, FIP_ERROR, "Failed to create .fip/cache directory: %s",
+            strerror(errno));
+        return false;
+    }
+#endif
+
     // TODO: Use the target information from the compile_message
     //
     // First we need to calculate a hash of the source file's path and then the
