@@ -662,9 +662,21 @@ bool compile_file(                                    //
 
     fip_print(ID, FIP_INFO, "Executing: %s", compile_cmd);
 
-    if (system(compile_cmd) != 0) {
-        fip_print(ID, FIP_ERROR, "Compiling file '%s' failed", file_path);
+    char *compile_output = NULL;
+    int exit_code = fip_execute_and_capture(&compile_output, compile_cmd);
+    if (exit_code != 0) {
+        if (compile_output && compile_output[0]) {
+            fip_print(ID, FIP_ERROR, "%s", compile_output);
+        }
+        fip_print(ID, FIP_ERROR, "Compiling file '%s' failed with exit code %d",
+            file_path, exit_code);
+        free(compile_output);
         return false;
+    } else {
+        if (compile_output && compile_output[0]) {
+            fip_print(ID, FIP_INFO, "%s", compile_output);
+        }
+        free(compile_output);
     }
 
     fip_print(ID, FIP_INFO, "Compiled '%.8s' successfully", hash);

@@ -445,6 +445,16 @@ void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig);
 /// @brief `src` The source to clone
 void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src);
 
+/// @function `fip_execute_and_capture`
+/// @brief Executes the given command and captures both stdout and stderr in the
+/// output string. Returns the exit code of the executed command
+///
+/// @param `output` The output parameter where the output of the command gets
+/// written to
+/// @param `command` The command to execute
+/// @return `int` The exit code of the executed command
+int fip_execute_and_caputre(char **output, const char *command);
+
 /*
  * ====================
  * MASTER FUNCTIONALITY
@@ -1250,6 +1260,132 @@ void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
             dest->rets[i] = src->rets[i];
         }
     }
+}
+
+int fip_execute_and_capture(char **output, const char *command) {
+    if (!output || !command) {
+        return -1;
+    }
+
+    *output = NULL;
+    int exit_code = 0;
+
+#ifdef __WIN32__
+    // Windows implementation
+    HANDLE stdout_read, stdout_write;
+    HANDLE stderr_read, stderr_write;
+    SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
+
+    // Create pipes for capturing output
+    if (!CreatePipe(&stdout_read, &stdout_write, &sa, 0) ||
+        !CreatePipe(&stderr_read, &stderr_write, &sa, 0)) {
+        return -1;
+    }
+
+    // Make parent handles non-inheritable
+    SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(stderr_read, HANDLE_FLAG_INHERIT, 0);
+
+    // Create a modifiable copy of the command
+    char *cmd_copy = malloc(strlen(command) + 1);
+    strcpy(cmd_copy, command);
+
+    STARTUPINFOA si = {0};
+    PROCESS_INFORMATION pi = {0};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = stdout_write;
+    si.hStdError = stderr_write;
+
+    if (CreateProcessA(NULL, cmd_copy, NULL, NULL, TRUE, 0, NULL, NULL, &si,
+            &pi)) {
+        // Close child ends
+        CloseHandle(stdout_write);
+        CloseHandle(stderr_write);
+        CloseHandle(pi.hThread);
+
+        // Read all output
+        char buffer[4096];
+        DWORD bytes_read;
+        size_t total_size = 0;
+        size_t capacity = 4096;
+        *output = malloc(capacity);
+        (*output)[0] = '\0';
+
+        // Read from both stdout and stderr
+        HANDLE handles[2] = {stdout_read, stderr_read};
+        for (int i = 0; i < 2; i++) {
+            while (ReadFile(handles[i], buffer, sizeof(buffer), &bytes_read,
+                       NULL) &&
+                bytes_read > 0) {
+                if (total_size + bytes_read >= capacity) {
+                    capacity *= 2;
+                    *output = realloc(*output, capacity);
+                }
+                memcpy(*output + total_size, buffer, bytes_read);
+                total_size += bytes_read;
+                (*output)[total_size] = '\0';
+            }
+        }
+
+        // Wait for process and get exit code
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        DWORD exit_code_dword;
+        GetExitCodeProcess(pi.hProcess, &exit_code_dword);
+        exit_code = (int)exit_code_dword;
+
+        CloseHandle(pi.hProcess);
+        CloseHandle(stdout_read);
+        CloseHandle(stderr_read);
+    } else {
+        CloseHandle(stdout_write);
+        CloseHandle(stderr_write);
+        CloseHandle(stdout_read);
+        CloseHandle(stderr_read);
+        exit_code = -1;
+    }
+
+    free(cmd_copy);
+#else
+    // Linux implementation using popen with combined stdout/stderr
+    char *popen_cmd = malloc(strlen(command) + 10);
+    sprintf(popen_cmd, "(%s) 2>&1", command);
+
+    FILE *fp = popen(popen_cmd, "r");
+    if (!fp) {
+        free(popen_cmd);
+        return -1;
+    }
+
+    // Read all output
+    char buffer[4096];
+    size_t total_size = 0;
+    size_t capacity = 4096;
+    *output = malloc(capacity);
+    (*output)[0] = '\0';
+
+    size_t bytes_read;
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
+        if (total_size + bytes_read >= capacity) {
+            capacity *= 2;
+            *output = realloc(*output, capacity);
+        }
+        memcpy(*output + total_size, buffer, bytes_read);
+        total_size += bytes_read;
+        (*output)[total_size] = '\0';
+    }
+
+    exit_code = pclose(fp);
+    if (exit_code != -1) {
+        exit_code = WEXITSTATUS(exit_code);
+    }
+
+    free(popen_cmd);
+#endif
+
+    return exit_code;
 }
 
 /*
