@@ -1311,7 +1311,7 @@ int fip_execute_and_capture(char **output, const char *command) {
         DWORD bytes_read;
         size_t total_size = 0;
         size_t capacity = 4096;
-        *output = malloc(capacity);
+        *output = (char *)malloc(capacity);
         (*output)[0] = '\0';
 
         // Read from both stdout and stderr
@@ -1322,7 +1322,7 @@ int fip_execute_and_capture(char **output, const char *command) {
                 bytes_read > 0) {
                 if (total_size + bytes_read >= capacity) {
                     capacity *= 2;
-                    *output = realloc(*output, capacity);
+                    *output = (char *)realloc(*output, capacity);
                 }
                 memcpy(*output + total_size, buffer, bytes_read);
                 total_size += bytes_read;
@@ -1350,7 +1350,7 @@ int fip_execute_and_capture(char **output, const char *command) {
     free(cmd_copy);
 #else
     // Linux implementation using popen with combined stdout/stderr
-    char *popen_cmd = malloc(strlen(command) + 10);
+    char *popen_cmd = (char *)malloc(strlen(command) + 10);
     sprintf(popen_cmd, "(%s) 2>&1", command);
 
     FILE *fp = popen(popen_cmd, "r");
@@ -1363,14 +1363,14 @@ int fip_execute_and_capture(char **output, const char *command) {
     char buffer[4096];
     size_t total_size = 0;
     size_t capacity = 4096;
-    *output = malloc(capacity);
+    *output = (char *)malloc(capacity);
     (*output)[0] = '\0';
 
     size_t bytes_read;
     while ((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
         if (total_size + bytes_read >= capacity) {
             capacity *= 2;
-            *output = realloc(*output, capacity);
+            *output = (char *)realloc(*output, capacity);
         }
         memcpy(*output + total_size, buffer, bytes_read);
         total_size += bytes_read;
