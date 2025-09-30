@@ -1318,7 +1318,6 @@ void fip_copy_stream_lines(FILE *src, FILE *dest) {
 }
 
 void fip_print_slave_streams() {
-    fip_print(0, FIP_INFO, "FIP_PRINT_SLAVE_STREAMS\n");
     for (uint32_t i = 0; i < master_state.slave_count; i++) {
         fip_copy_stream_lines(master_state.slave_stderr[i], stderr);
     }
@@ -1507,7 +1506,7 @@ bool fip_spawn_interop_module(      //
     // Make sure parent handles are not inherited
     SetHandleInformation(stdin_write, HANDLE_FLAG_INHERIT, 0);
     SetHandleInformation(stdout_read, HANDLE_FLAG_INHERIT, 0);
-    SetHandleInformation(stderr_write, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(stderr_read, HANDLE_FLAG_INHERIT, 0);
 
     // Create command line
     char cmdline[512];
