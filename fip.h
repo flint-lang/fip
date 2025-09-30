@@ -1287,7 +1287,7 @@ int fip_execute_and_capture(char **output, const char *command) {
     SetHandleInformation(stderr_read, HANDLE_FLAG_INHERIT, 0);
 
     // Create a modifiable copy of the command
-    char *cmd_copy = malloc(strlen(command) + 1);
+    char *cmd_copy = (char *)malloc(strlen(command) + 1);
     strcpy(cmd_copy, command);
 
     STARTUPINFOA si = {0};
