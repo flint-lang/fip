@@ -90,7 +90,7 @@ Different Modules can have vastly different configuration files, taylored to the
 
 ## `fip-c`
 
-Now let's come to the Interop Module itself. Because the `fip-c` executable depends on `libclang`, it has became quite large. Because of this the `fip-c` executable now needs to be available in your `PATH`, for example through putting it alongside the `flintc` executable into the `.local/bin` directory. You can download the `fip-c` binary from the [Releases](https://github.com/flint-lang/fip/releases) page.
+Now let's come to the Interop Module itself. Because the `fip-c` executable depends on `libclang`, it has became quite large. Because of this the `fip-c` exectuable now needs to be installed system-wide. This can be done by putting the executable into the `$HOME/.local/share/fip/modules` directory on Linux or into the `%LOCALAPPDATA/fip/modules` directory on Windows. You can download the `fip-c` binary from the [Releases](https://github.com/flint-lang/fip/releases) page.
 
 # Bindings
 
