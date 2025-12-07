@@ -702,11 +702,65 @@ void fip_print(                      //
     if (!format) {
         return;
     }
+
+    // Variables for timestamp
+    int year, month, day, hour, minute, second;
+    long milliseconds, microseconds;
+
+#ifdef _WIN32
+    // Windows-specific time handling
+    SYSTEMTIME st;
+    FILETIME ft;
+
+    // Get system time with precision
+    GetSystemTimePreciseAsFileTime(&ft); // Windows 8+ for high precision
+    // For older Windows, use: GetSystemTimeAsFileTime(&ft);
+
+    // Convert to SYSTEMTIME for easy access to components
+    FileTimeToSystemTime(&ft, &st);
+
+    // Extract date/time components
+    year = st.wYear;
+    month = st.wMonth;
+    day = st.wDay;
+    hour = st.wHour;
+    minute = st.wMinute;
+    second = st.wSecond;
+    milliseconds = st.wMilliseconds;
+
+    // Calculate microseconds from FILETIME (100-nanosecond intervals)
+    ULARGE_INTEGER uli;
+    uli.LowPart = ft.dwLowDateTime;
+    uli.HighPart = ft.dwHighDateTime;
+    microseconds =
+        (uli.QuadPart / 10) % 1000; // Convert to microseconds, get remainder
+#else
+    // Linux/POSIX-specific time handling
+    struct timespec ts;
+    clock_gettime(0, &ts);
+    struct tm *tm_info = localtime(&ts.tv_sec);
+
+    // Extract date/time components
+    year = tm_info->tm_year + 1900;
+    month = tm_info->tm_mon + 1;
+    day = tm_info->tm_mday;
+    hour = tm_info->tm_hour;
+    minute = tm_info->tm_min;
+    second = tm_info->tm_sec;
+
+    // Calculate microseconds and milliseconds
+    microseconds = ts.tv_nsec / 1000;
+    milliseconds = microseconds / 1000;
+    microseconds = microseconds % 1000;
+#endif
+
     // Buffer for the whole message to fit into
-    char message[4096];
+    static char message[4096];
     memset(message, 0, sizeof(message));
-    char prefix[64];
+    static char prefix[256];
     memset(prefix, 0, sizeof(prefix));
+    static char timestamp[32];
+    memset(timestamp, 0, sizeof(timestamp));
 
     // ANSI color constants
     static const char *const colors[] = {
@@ -718,18 +772,48 @@ void fip_print(                      //
         "\033[90m"  // FIP_TRACE = GREY
     };
 
-    // Build prefix
+    // Log level strings
+    static const char *const level_names[] = {
+        "NONE ", // FIP_NONE
+        "ERROR", // FIP_ERROR
+        "WARN ", // FIP_WARN
+        "INFO ", // FIP_INFO
+        "DEBUG", // FIP_DEBUG
+        "TRACE"  // FIP_TRACE
+    };
+
+    // Format timestamp: YYYY-MM-DD_HH:MI:SS.MS.US (fixed width: 26 chars)
+    snprintf(                                        //
+        timestamp, sizeof(timestamp),                //
+        "%04d-%02d-%02d_%02d:%02d:%02d.%03ld.%03ld", //
+        year,                                        //
+        month,                                       //
+        day,                                         //
+        hour,                                        //
+        minute,                                      //
+        second,                                      //
+        milliseconds,                                //
+        microseconds                                 //
+    );
+
+    // Build prefix with color, ID, timestamp, and log level
     if (id == 0) {
-        snprintf(                   //
-            prefix, sizeof(prefix), //
-            "[%sMaster\033[0m]:  ", //
-            colors[log_level]       //
+        snprintf(                                      //
+            prefix, sizeof(prefix),                    //
+            "[%sMaster\033[0m]  [%s] [%s%s\033[0m]: ", //
+            colors[log_level],                         //
+            timestamp,                                 //
+            colors[log_level],                         //
+            level_names[log_level]                     //
         );
     } else {
-        snprintf(                    //
-            prefix, sizeof(prefix),  //
-            "[%sSlave %u\033[0m]: ", //
-            colors[log_level], id    //
+        snprintf(                                       //
+            prefix, sizeof(prefix),                     //
+            "[%sSlave %u\033[0m] [%s] [%s%s\033[0m]: ", //
+            colors[log_level], id,                      //
+            timestamp,                                  //
+            colors[log_level],                          //
+            level_names[log_level]                      //
         );
     }
 
