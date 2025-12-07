@@ -828,8 +828,121 @@ void fip_print(                      //
     fflush(stderr);
 }
 
-void fip_print_msg(uint32_t id, [[maybe_unused]] const fip_msg_t *message) {
-    fip_print(id, FIP_ERROR, "TODO: fip_print_msg");
+void fip_print_msg(uint32_t id, const fip_msg_t *message) {
+    switch (message->type) {
+        case FIP_MSG_UNKNOWN:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_UNKNOWN: {}");
+            break;
+        case FIP_MSG_CONNECT_REQUEST:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_CONNECT_REQUEST: {");
+            fip_print(id, FIP_DEBUG, "  .setup_ok: ", //
+                message->u.con_req.setup_ok           //
+            );
+            fip_print(id, FIP_DEBUG, "  .version: %d.%d:%d", //
+                message->u.con_req.version.major,            //
+                message->u.con_req.version.minor,            //
+                message->u.con_req.version.patch             //
+            );
+            fip_print(id, FIP_DEBUG, "  .module_name: %s", //
+                message->u.con_req.module_name             //
+            );
+            fip_print(id, FIP_DEBUG, "}");
+            break;
+        case FIP_MSG_SYMBOL_REQUEST:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_SYMBOL_REQUEST: {");
+            switch (message->u.sym_req.type) {
+                case FIP_SYM_UNKNOWN:
+                    fip_print(id, FIP_DEBUG, "  .type: UNKNOWN");
+                    break;
+                case FIP_SYM_FUNCTION:
+                    fip_print(id, FIP_DEBUG, "  .type: FUNCTION");
+                    fip_print(id, FIP_DEBUG, "  .signature: {");
+                    fip_print_sig_fn(id, &message->u.sym_req.sig.fn);
+                    fip_print(id, FIP_DEBUG, "  }");
+                    break;
+                case FIP_SYM_DATA:
+                    fip_print(id, FIP_DEBUG, "  .type: DATA");
+                    fip_print(id, FIP_DEBUG, "  .signature: TODO");
+                    break;
+            }
+            fip_print(id, FIP_DEBUG, "}");
+            break;
+        case FIP_MSG_SYMBOL_RESPONSE:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_SYMBOL_RESPONSE: {");
+            fip_print(id, FIP_DEBUG, "  .found: %d", message->u.sym_res.found);
+            fip_print(id, FIP_DEBUG, "  .module_name: %s", //
+                message->u.sym_res.module_name             //
+            );
+            switch (message->u.sym_res.type) {
+                case FIP_SYM_UNKNOWN:
+                    fip_print(id, FIP_DEBUG, "  .type: UNKNOWN");
+                    break;
+                case FIP_SYM_FUNCTION:
+                    fip_print(id, FIP_DEBUG, "  .type: FUNCTION");
+                    fip_print(id, FIP_DEBUG, "  .signature: {");
+                    fip_print_sig_fn(id, &message->u.sym_req.sig.fn);
+                    fip_print(id, FIP_DEBUG, "  }");
+                    break;
+                case FIP_SYM_DATA:
+                    fip_print(id, FIP_DEBUG, "  .type: DATA");
+                    fip_print(id, FIP_DEBUG, "  .signature: TODO");
+                    break;
+            }
+            fip_print(id, FIP_DEBUG, "}");
+            break;
+        case FIP_MSG_COMPILE_REQUEST:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_COMPILE_REQUEST: {");
+            fip_print(id, FIP_DEBUG, "  .target: {");
+            fip_print(id, FIP_DEBUG, "    .arch: %s", //
+                message->u.com_req.target.arch        //
+            );
+            fip_print(id, FIP_DEBUG, "    .sub: %s", //
+                message->u.com_req.target.sub        //
+            );
+            fip_print(id, FIP_DEBUG, "    .vendor: %s", //
+                message->u.com_req.target.vendor        //
+            );
+            fip_print(id, FIP_DEBUG, "    .sys: %s", //
+                message->u.com_req.target.sys        //
+            );
+            fip_print(id, FIP_DEBUG, "    .abi: %s", //
+                message->u.com_req.target.abi        //
+            );
+            fip_print(id, FIP_DEBUG, "  }");
+            fip_print(id, FIP_DEBUG, "}");
+            break;
+        case FIP_MSG_OBJECT_RESPONSE:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_OBJECT_RESPONSE: {");
+            fip_print(id, FIP_DEBUG, "  .has_obj: %d", //
+                message->u.obj_res.has_obj             //
+            );
+            fip_print(id, FIP_DEBUG, "  .compilation_failed: %d", //
+                message->u.obj_res.compilation_failed             //
+            );
+            fip_print(id, FIP_DEBUG, "  .module_name: %s", //
+                message->u.obj_res.module_name             //
+            );
+            fip_print(id, FIP_DEBUG, "  .path_count: %d", //
+                message->u.obj_res.path_count             //
+            );
+            fip_print(id, FIP_DEBUG, "  .paths: %s", //
+                message->u.obj_res.paths             //
+            );
+            fip_print(id, FIP_DEBUG, "}");
+            break;
+        case FIP_MSG_KILL:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_KILL: {");
+            switch (message->u.kill.reason) {
+                case FIP_KILL_FINISH:
+                    fip_print(id, FIP_DEBUG, "  .reason: FINISH");
+                    break;
+                case FIP_KILL_VERSION_MISMATCH:
+                    fip_print(id, FIP_DEBUG, "  .reason: VERSION_MISMATCH");
+                    break;
+            }
+            fip_print(id, FIP_DEBUG, "}");
+            break;
+    }
 }
 
 void fip_encode_type(          //
