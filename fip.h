@@ -107,7 +107,7 @@ static void msleep(unsigned int ms) {
 // The version of the FIP
 #define FIP_MAJOR 0
 #define FIP_MINOR 2
-#define FIP_PATCH 3
+#define FIP_PATCH 5
 
 #define FIP_TYPE_COUNT 12
 #define FIP_MAX_MODULE_NAME_LEN 16
@@ -196,12 +196,19 @@ typedef struct {
     struct fip_type_t *fields;
 } fip_type_struct_t;
 
+/// @typedef `fip_type_recursive_t`
+/// @brief The struct representing recursive / repeating types
+typedef struct {
+    uint8_t levels_back;
+} fip_type_recursive_t;
+
 /// @typedef `fip_type_enum_t`
 /// @brief The enum containing all possible FIP types there are
 typedef enum {
     FIP_TYPE_PRIMITIVE,
     FIP_TYPE_PTR,
     FIP_TYPE_STRUCT,
+    FIP_TYPE_RECURSIVE,
 } fip_type_enum_t;
 
 /// @typedef `fip_type_t`
@@ -213,6 +220,7 @@ typedef struct fip_type_t {
         fip_type_prim_enum_t prim;
         fip_type_ptr_t ptr;
         fip_type_struct_t struct_t;
+        fip_type_recursive_t recursive;
     } u;
 } fip_type_t;
 
@@ -965,6 +973,9 @@ void fip_encode_type(          //
                 fip_encode_type(buffer, idx, &type->u.struct_t.fields[i]);
             }
             break;
+        case FIP_TYPE_RECURSIVE:
+            buffer[(*idx)++] = (char)type->u.recursive.levels_back;
+            break;
     }
 }
 
@@ -1112,6 +1123,9 @@ void fip_decode_type(                //
                 }
             }
             break;
+        case FIP_TYPE_RECURSIVE:
+            type->u.recursive.levels_back = (uint8_t)buffer[(*idx)++];
+            break;
     }
 }
 
@@ -1247,6 +1261,8 @@ void fip_free_type(fip_type_t *type) {
                 }
                 free(type->u.struct_t.fields);
             }
+            break;
+        case FIP_TYPE_RECURSIVE:
             break;
     }
 }
@@ -1413,6 +1429,26 @@ void fip_print_type(       //
             }
             buffer[(*idx)++] = '}';
             break;
+        case FIP_TYPE_RECURSIVE: {
+            buffer[(*idx)++] = '{';
+            buffer[(*idx)++] = 'R';
+            buffer[(*idx)++] = 'E';
+            buffer[(*idx)++] = 'C';
+            buffer[(*idx)++] = ':';
+            uint8_t level = type->u.recursive.levels_back;
+            uint8_t part_100 = level / 100;
+            uint8_t part_10 = (level - part_100 * 100) / 10;
+            uint8_t part_1 = level - part_100 * 100 - part_10 * 10;
+            if (level >= 100) {
+                buffer[(*idx)++] = (char)('0' + part_100);
+            }
+            if (level >= 10) {
+                buffer[(*idx)++] = (char)('0' + part_10);
+            }
+            buffer[(*idx)++] = (char)('0' + part_1);
+            buffer[(*idx)++] = '}';
+            break;
+        }
     }
 }
 

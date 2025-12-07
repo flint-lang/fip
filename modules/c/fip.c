@@ -2,7 +2,11 @@
 #define FIP_IMPLEMENTATION
 #include "fip.h"
 
-fip_log_level_t LOG_LEVEL = FIP_INFO;
+#ifdef DEBUG_BUILD
+fip_log_level_t LOG_LEVEL = FIP_DEBUG;
+#else
+fip_log_level_t LOG_LEVEL = FIP_WARN;
+#endif
 
 #include <clang-c/Index.h>
 
@@ -28,6 +32,12 @@ fip_log_level_t LOG_LEVEL = FIP_INFO;
  * targetted at only compiling / finding C
  * definitions, not the definitions of any other
  * language.
+ * ==============================================
+ */
+
+/*
+ * ==============================================
+ * GLOBAL DEFINITIONS
  * ==============================================
  */
 
@@ -71,6 +81,71 @@ typedef struct {
     uint32_t module_id;
 } field_visitor_data;
 
+/*
+ * ==============================================
+ * TYPE STACK Definitions and Helper Functions
+ * ==============================================
+ * Because C types may be self-referential and
+ * recursive we need to handle such types and
+ * cases explicitely, since otherwise we would
+ * have infinite looping scenarios. To add
+ * support for recursive types I have implemented
+ * a "type stack" to track which types we already
+ * came across within the type conversion
+ * function
+ * ==============================================
+ */
+
+typedef struct cx_type_stack {
+    CXType *items;
+    uint32_t len;
+    uint32_t cap;
+} cx_type_stack;
+
+void stack_clear(cx_type_stack *s) {
+    if (s->items != NULL) {
+        free(s->items);
+    }
+    s->items = NULL;
+    s->len = 0;
+    s->cap = 0;
+}
+
+void stack_push(cx_type_stack *s, CXType t) {
+    if (s->len == s->cap) {
+        s->cap = s->cap == 0 ? 8 : s->cap * 2;
+        s->items = (CXType *)realloc(s->items, sizeof(CXType) * s->cap);
+    }
+    s->items[s->len++] = t;
+}
+
+void stack_pop(cx_type_stack *s) {
+    if (s->len > 0) {
+        s->len--;
+        if (s->len < s->cap / 2 && s->cap > 8) {
+            s->items = (CXType *)realloc(             //
+                s->items, sizeof(CXType) * s->cap / 2 //
+            );
+            s->cap = s->cap / 2;
+        }
+    }
+}
+
+int stack_find_equal(cx_type_stack *s, CXType canonical) {
+    for (uint32_t i = 0; i < s->len; ++i) {
+        if (clang_equalTypes(s->items[i], canonical)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/*
+ * ==============================================
+ * GLOBAL VARIABLES
+ * ==============================================
+ */
+
 #define MAX_SYMBOLS 1000
 #define MODULE_NAME "fip-c"
 
@@ -78,6 +153,7 @@ fip_c_symbol_t symbols[MAX_SYMBOLS]; // Simple array for now
 uint32_t symbol_count = 0;
 uint32_t ID;
 fip_module_config_t CONFIG;
+cx_type_stack stack;
 
 bool parse_toml_file(toml_result_t toml) {
     // === COMPILER ===
@@ -144,6 +220,22 @@ bool parse_toml_file(toml_result_t toml) {
     return true;
 }
 
+/*
+ * ==============================================
+ * CLANG TO FIP TYPE Conversion Functions
+ * ==============================================
+ * The conversion functions work with a visitor
+ * pattern of functions which get executed
+ * depending on the type at hand. The `fip-c`
+ * Interop Module is single-threaded only which
+ * means we can have a global type stack to
+ * detect recursion effectively. This uses the
+ * above recursion handling functions extensively
+ * to keep track of the current type and all
+ * types which came before.
+ * ==============================================
+ */
+
 enum CXChildVisitResult count_struct_fields_visitor( //
     CXCursor cursor,                                 //
     [[maybe_unused]] CXCursor parent,                //
@@ -184,68 +276,81 @@ enum CXChildVisitResult struct_field_visitor( //
 }
 
 bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
+    CXType canonical = clang_getCanonicalType(clang_type);
+    fip_print(ID, FIP_WARN, "Resolving type at depth %u", stack.len);
+
     fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
 
-    switch (clang_type.kind) {
+    int found = stack_find_equal(&stack, canonical);
+    if (found >= 0) {
+        fip_type->type = FIP_TYPE_RECURSIVE;
+        fip_type->u.recursive.levels_back = (uint8_t)(stack.len - found);
+        return true;
+    }
+
+    // Type not seen yet, push and process
+    stack_push(&stack, canonical);
+
+    switch (canonical.kind) {
         case CXType_UChar:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_U8;
-            return true;
+            goto ok;
         case CXType_UShort:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_U16;
-            return true;
+            goto ok;
         case CXType_UInt:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_U32;
-            return true;
+            goto ok;
         case CXType_ULong:
         case CXType_ULongLong:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_U64;
-            return true;
+            goto ok;
         case CXType_Char_S:
         case CXType_SChar:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_I8;
-            return true;
+            goto ok;
         case CXType_Short:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_I16;
-            return true;
+            goto ok;
         case CXType_Int:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_I32;
-            return true;
+            goto ok;
         case CXType_Long:
         case CXType_LongLong:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_I64;
-            return true;
+            goto ok;
         case CXType_Float:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_F32;
-            return true;
+            goto ok;
         case CXType_Double:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_F64;
-            return true;
+            goto ok;
         case CXType_Bool:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_BOOL;
-            return true;
+            goto ok;
         case CXType_Void:
             fip_type->type = FIP_TYPE_PRIMITIVE;
             fip_type->u.prim = FIP_VOID;
-            return true;
+            goto ok;
         case CXType_Pointer: {
-            CXType pointee = clang_getPointeeType(clang_type);
+            CXType pointee = clang_getPointeeType(canonical);
             if (pointee.kind == CXType_Char_S || pointee.kind == CXType_SChar) {
                 // char* -> treat as C string
                 fip_type->is_mutable = !clang_isConstQualifiedType(pointee);
                 fip_type->type = FIP_TYPE_PRIMITIVE;
                 fip_type->u.prim = FIP_STR;
-                return true;
+                goto ok;
             } else {
                 // Other pointer types
                 fip_type->type = FIP_TYPE_PTR;
@@ -256,16 +361,17 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
                 if (success) {
                     fip_type->is_mutable =
                         fip_type->u.ptr.base_type->is_mutable;
+                    goto ok;
                 }
-                return success;
+                goto fail;
             }
         }
         case CXType_Elaborated: {
             // For elaborated types (like 'struct Foo', 'union Bar'), get the
             // named type
-            CXType named_type = clang_Type_getNamedType(clang_type);
+            CXType named_type = clang_Type_getNamedType(canonical);
 
-            CXString elaborated_name = clang_getTypeSpelling(clang_type);
+            CXString elaborated_name = clang_getTypeSpelling(canonical);
             CXString named_name = clang_getTypeSpelling(named_type);
             fip_print(                                      //
                 ID, FIP_TRACE,                              //
@@ -279,17 +385,17 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
 
             // Recursively process the named type
             if (clang_type_to_fip_type(named_type, fip_type)) {
-                fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
-                return true;
+                fip_type->is_mutable = !clang_isConstQualifiedType(canonical);
+                goto ok;
             } else {
-                return false;
+                goto fail;
             }
         }
         case CXType_Typedef: {
             // For typedef'ed types, get the canonical (underlying) type
-            CXType canonical_type = clang_getCanonicalType(clang_type);
+            CXType canonical_type = clang_getCanonicalType(canonical);
 
-            CXString typedef_name = clang_getTypeSpelling(clang_type);
+            CXString typedef_name = clang_getTypeSpelling(canonical);
             CXString canonical_name = clang_getTypeSpelling(canonical_type);
             fip_print(                            //
                 ID, FIP_TRACE,                    //
@@ -302,10 +408,10 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
 
             // Recursively process the canonical type
             if (clang_type_to_fip_type(canonical_type, fip_type)) {
-                fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
-                return true;
+                fip_type->is_mutable = !clang_isConstQualifiedType(canonical);
+                goto ok;
             } else {
-                return false;
+                goto fail;
             }
         }
         case CXType_Record: { // CXType_Record represents structs/unions
@@ -313,7 +419,7 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             fip_type->type = FIP_TYPE_STRUCT;
 
             // Get the struct declaration cursor
-            CXCursor type_cursor = clang_getTypeDeclaration(clang_type);
+            CXCursor type_cursor = clang_getTypeDeclaration(canonical);
 
             // Count fields first
             int field_count = 0;
@@ -324,7 +430,7 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             if (field_count <= 0 || field_count > 255) {
                 fip_print(ID, FIP_WARN, "Invalid struct field count: %d",
                     field_count);
-                return false;
+                goto fail;
             }
 
             fip_type->u.struct_t.field_count = (uint8_t)field_count;
@@ -351,21 +457,28 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
                     visitor_data.current_index, field_count              //
                 );
                 free(fip_type->u.struct_t.fields);
-                return false;
+                goto fail;
             }
 
             fip_print(ID, FIP_TRACE,
                 "Successfully processed struct with %d fields", field_count);
-            return true;
+            goto ok;
         }
         case CXType_Complex: {
             // TODO: Handle complex types if needed
             fip_print(ID, FIP_ERROR, "Complex types not yet supported");
-            return false;
+            goto fail;
         }
         default:
-            return false;
+            goto fail;
     }
+
+ok:
+    stack_pop(&stack);
+    return true;
+fail:
+    stack_pop(&stack);
+    return false;
 }
 
 bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
@@ -382,12 +495,15 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
     if (return_type.kind != CXType_Void) {
         fn_sig->rets_len = 1;
         fn_sig->rets = malloc(sizeof(fip_type_t));
+        stack_clear(&stack);
         if (!clang_type_to_fip_type(return_type, &fn_sig->rets[0])) {
             fip_print(ID, FIP_WARN, "Unsupported return type for function %s",
                 fn_sig->name);
             free(fn_sig->rets);
+            stack_clear(&stack);
             return false;
         }
+        stack_clear(&stack);
     } else {
         fn_sig->rets_len = 0;
         fn_sig->rets = NULL;
@@ -409,6 +525,7 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
         fn_sig->args = malloc(sizeof(fip_type_t) * num_args);
         for (int i = 0; i < num_args; i++) {
             CXType arg_type = clang_getArgType(function_type, i);
+            stack_clear(&stack);
             if (!clang_type_to_fip_type(arg_type, &fn_sig->args[i])) {
                 fip_print(                                          //
                     ID, FIP_WARN,                                   //
@@ -420,6 +537,7 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
                 return false;
             }
         }
+        stack_clear(&stack);
     } else {
         fn_sig->args = NULL;
     }
@@ -879,7 +997,15 @@ send:
     }
     for (uint32_t i = 0; i < CONFIG.sources_len; i++) {
         fip_print(ID, FIP_DEBUG, "source[%u]: %s", i, CONFIG.sources[i]);
+    }
+    for (uint32_t i = 0; i < CONFIG.sources_len; i++) {
+        fip_print(ID, FIP_DEBUG, "parsing source '%s'...", CONFIG.sources[i]);
+        clock_t start = clock();
         parse_c_file(CONFIG.sources[i]);
+        clock_t end = clock();
+        double parse_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+        fip_print(ID, FIP_DEBUG, "parsing '%s' took %f s", CONFIG.sources[i],
+            parse_time);
     }
 
     // Main loop - wait for messages from master

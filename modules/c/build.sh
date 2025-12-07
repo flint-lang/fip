@@ -28,22 +28,26 @@ read -ra clang_libs <<< "$(get_clang_libs "linux")"
 
 declare -a base_flags
 base_flags=(
-	"-I$ROOT"
-	"-I$FLINTC_ROOT/vendor/llvm-linux/include"
-	"-std=c17"
-	"-Wall"
-	"-Wextra"
-	"-Werror"
-	"-Wno-unused-variable"
-	"-Wno-deprecated-declarations"
-	"-ffunction-sections"
-	"-fdata-sections"
-	"-O3"
-	"-flto"
-	"-DNDEBUG"
-	"-ffast-math"
-	"-march=x86-64"
-	"-mtune=generic"
+    "-I$ROOT"
+    "-I$FLINTC_ROOT/vendor/llvm-linux/include"
+    "-I/usr/include"
+    "-std=c17"
+    "-Wall"
+    "-Wextra"
+    "-Werror"
+    "-Wno-unused-variable"
+    "-Wno-deprecated-declarations"
+    "-ffunction-sections"
+    "-fdata-sections"
+    "-fsanitize=address"
+    "-O3"
+    # "-O0"
+    # "-g"
+    # "-DDEBUG_BUILD"
+    "-flto"
+    "-ffast-math"
+    "-march=x86-64"
+    "-mtune=generic"
 )
 
 echo "Building Linux binaries..."
@@ -160,6 +164,7 @@ fi
 
 cd "$ROOT" || exit 1
 
+mkdir -p "$ROOT/.fip/modules"
 cp "$ROOT/modules/c/fip-c" "$ROOT/.fip/modules/fip-c"
 
 "$ROOT/modules/c/example_master"
