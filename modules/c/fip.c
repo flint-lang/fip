@@ -277,7 +277,7 @@ enum CXChildVisitResult struct_field_visitor( //
 
 bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
     CXType canonical = clang_getCanonicalType(clang_type);
-    fip_print(ID, FIP_WARN, "Resolving type at depth %u", stack.len);
+    fip_print(ID, FIP_DEBUG, "Resolving type at depth %u", stack.len);
 
     fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
 

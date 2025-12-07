@@ -2377,7 +2377,7 @@ uint8_t fip_master_await_responses(        //
                     wrong_count++;
                     break;
                 }
-                fip_print(0, FIP_WARN, "Recieved message length: %u", msg_len);
+                fip_print(0, FIP_DEBUG, "Recieved message length: %u", msg_len);
 
                 // Read message data
                 memset(buffer, 0, FIP_MSG_SIZE);
