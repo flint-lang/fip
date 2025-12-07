@@ -1696,6 +1696,7 @@ bool fip_master_symbol_request( //
 
     bool symbol_found = false;
     for (uint8_t i = 0; i < master_state.response_count; i++) {
+        fip_print_msg(0, &master_state.responses[i]);
         if (master_state.responses[i].type == FIP_MSG_SYMBOL_RESPONSE &&
             master_state.responses[i].u.sym_res.found) {
             symbol_found = true;
@@ -2242,6 +2243,15 @@ uint8_t fip_master_await_responses(        //
     *response_count = 0;
     uint8_t wrong_count = 0;
 
+    // Set all stderr file descriptors to non-blocking mode
+    for (uint32_t i = 0; i < master_state.slave_count; i++) {
+        if (master_state.slave_stderr[i]) {
+            int stderr_fd = fileno(master_state.slave_stderr[i]);
+            int flags = fcntl(stderr_fd, F_GETFL, 0);
+            fcntl(stderr_fd, F_SETFL, flags | O_NONBLOCK);
+        }
+    }
+
     // Read responses from each slave with timeout
     for (uint32_t i = 0; i < master_state.slave_count; i++) {
         if (!master_state.slave_stdout[i]) {
@@ -2250,70 +2260,140 @@ uint8_t fip_master_await_responses(        //
             continue;
         }
 
-        // Set up timeout for reading
-        int fd = fileno(master_state.slave_stdout[i]);
+        int stdout_fd = fileno(master_state.slave_stdout[i]);
+        int stderr_fd = master_state.slave_stderr[i]
+            ? fileno(master_state.slave_stderr[i])
+            : -1;
+
         fd_set read_fds;
         struct timeval timeout;
+        struct timespec start;
+        clock_gettime(CLOCK_MONOTONIC, &start);
 
-        FD_ZERO(&read_fds);
-        FD_SET(fd, &read_fds);
-        timeout.tv_sec = 1; // 1 second timeout
-        timeout.tv_usec = 0;
+        bool message_received = false;
 
-        int activity = select(fd + 1, &read_fds, NULL, NULL, &timeout);
-        if (activity <= 0) {
-            fip_print(0, FIP_WARN, "Timeout waiting for slave %d response",
-                i + 1);
-            wrong_count++;
-            continue;
-        }
+        // Keep trying until we get a message or timeout (10 seconds)
+        while (!message_received) {
+            // Check if we've exceeded timeout
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            double elapsed = ((double)(now.tv_sec - start.tv_sec)) +
+                ((double)(now.tv_nsec - start.tv_nsec) / 1000000000.0);
 
-        // Read message length (4 bytes)
-        uint32_t msg_len;
-        if (fread(&msg_len, 1, 4, master_state.slave_stdout[i]) != 4) {
-            fip_print(0, FIP_WARN,
-                "Failed to read message length from slave %d", i + 1);
-            wrong_count++;
-            continue;
-        }
+            if (elapsed > 10.0) {
+                fip_print(0, FIP_WARN,
+                    "Timeout waiting for slave %d response for %f seconds",
+                    i + 1, elapsed);
+                wrong_count++;
+                break;
+            }
 
-        // Validate message length
-        if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
-            fip_print(0, FIP_WARN, "Invalid message length from slave %d: %u",
-                i + 1, msg_len);
-            wrong_count++;
-            continue;
-        }
+            // Set up select with remaining time
+            FD_ZERO(&read_fds);
+            FD_SET(stdout_fd, &read_fds);
+            int max_fd = stdout_fd;
+            if (stderr_fd >= 0) {
+                FD_SET(stderr_fd, &read_fds);
+                if (stderr_fd > max_fd)
+                    max_fd = stderr_fd;
+            }
 
-        // Read message data
-        memset(buffer, 0, FIP_MSG_SIZE);
-        if (fread(buffer, 1, msg_len, master_state.slave_stdout[i]) !=
-            msg_len) {
-            fip_print(0, FIP_WARN,
-                "Failed to read complete message from slave %d", i + 1);
-            wrong_count++;
-            continue;
-        }
+            double remaining = 10.0 - elapsed;
+            timeout.tv_sec = (long)remaining;
+            timeout.tv_usec = (long)((remaining - timeout.tv_sec) * 1000000);
 
-        // Decode message
-        fip_decode_msg(buffer, &responses[*response_count]);
-        fip_print(0, FIP_INFO, "Received message from slave %d: %s", i + 1,
-            fip_msg_type_str[responses[*response_count].type]);
+            int activity = select(max_fd + 1, &read_fds, NULL, NULL, &timeout);
 
-        if (responses[*response_count].type != expected_msg_type) {
-            wrong_count++;
-        }
+            if (activity < 0) {
+                fip_print(0, FIP_WARN, "Select error for slave %d", i + 1);
+                wrong_count++;
+                break;
+            }
 
-        (*response_count)++;
+            // Always drain stderr if available (non-blocking)
+            if (stderr_fd >= 0) {
+                char stderr_buf[4096];
+                ssize_t n;
+                while ((n = read(stderr_fd, stderr_buf,
+                            sizeof(stderr_buf) - 1)) > 0) {
+                    stderr_buf[n] = '\0';
+                    fprintf(stderr, "%s", stderr_buf);
+                    fflush(stderr);
+                }
+            }
 
-        // Prevent buffer overflow
-        if (*response_count >= FIP_MAX_SLAVES) {
-            break;
+            // Check if stdout has data
+            if (FD_ISSET(stdout_fd, &read_fds)) {
+                // Read message length (4 bytes)
+                uint32_t msg_len;
+                if (fread(&msg_len, 1, 4, master_state.slave_stdout[i]) != 4) {
+                    fip_print(0, FIP_WARN,
+                        "Failed to read message length from slave %d", i + 1);
+                    wrong_count++;
+                    break;
+                }
+
+                // Validate message length
+                if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
+                    fip_print(0, FIP_WARN,
+                        "Invalid message length from slave %d: %u", i + 1,
+                        msg_len);
+                    wrong_count++;
+                    break;
+                }
+                fip_print(0, FIP_WARN, "Recieved message length: %u", msg_len);
+
+                // Read message data
+                memset(buffer, 0, FIP_MSG_SIZE);
+                if (fread(buffer, 1, msg_len, master_state.slave_stdout[i]) !=
+                    msg_len) {
+                    fip_print(0, FIP_WARN,
+                        "Failed to read complete message from slave %d", i + 1);
+                    wrong_count++;
+                    break;
+                }
+
+                // Decode message
+                fip_decode_msg(buffer, &responses[*response_count]);
+                fip_print(0, FIP_INFO, "Received message from slave %d: %s",
+                    i + 1, fip_msg_type_str[responses[*response_count].type]);
+
+                if (responses[*response_count].type != expected_msg_type) {
+                    wrong_count++;
+                }
+
+                (*response_count)++;
+                message_received = true;
+
+                // Prevent buffer overflow
+                if (*response_count >= FIP_MAX_SLAVES) {
+                    break;
+                }
+            }
+
+            // Small sleep to avoid busy-waiting
+            if (!message_received) {
+                struct timespec sleep_time = {0, 1000000}; // 1ms
+                nanosleep(&sleep_time, NULL);
+            }
         }
     }
 
-    // Print all the debug output of all the slaves
-    fip_print_slave_streams();
+    // Final drain of all stderr streams
+    for (uint32_t i = 0; i < master_state.slave_count; i++) {
+        if (master_state.slave_stderr[i]) {
+            int stderr_fd = fileno(master_state.slave_stderr[i]);
+            char stderr_buf[4096];
+            ssize_t n;
+            while (
+                (n = read(stderr_fd, stderr_buf, sizeof(stderr_buf) - 1)) > 0) {
+                stderr_buf[n] = '\0';
+                fprintf(stderr, "%s", stderr_buf);
+                fflush(stderr);
+            }
+        }
+    }
+
     return wrong_count;
 }
 

@@ -2,7 +2,11 @@
 #define FIP_IMPLEMENTATION
 #include "fip.h"
 
-fip_log_level_t LOG_LEVEL = FIP_TRACE;
+#ifdef DEBUG_BUILD
+fip_log_level_t LOG_LEVEL = FIP_DEBUG;
+#else
+fip_log_level_t LOG_LEVEL = FIP_WARN;
+#endif
 fip_master_state_t master_state = {0};
 
 #include <unistd.h>
@@ -18,9 +22,6 @@ int main() {
     if (!config_file.ok) {
         goto kill;
     }
-
-    // Create a single message which will be re-used for all messages
-    fip_msg_t msg = {0};
 
     // Start all enabled interop modules
     for (uint8_t i = 0; i < config_file.enabled_count; i++) {
@@ -75,34 +76,32 @@ int main() {
         }
     }
 
-    // Broadcast a few definitions. These definitions are normally not created
-    // by hand but gathered in the compiler in a list or something similar, so
-    // we actually would not need to to the same as here.
+    // Create a single message which will be re-used for all messages
+    fip_msg_t msg = {0};
+
+    // Broadcast the InitWindow function of raylib
+    // extern def InitWindow(mut i32 width, mut i32 height, str title);
     msg.type = FIP_MSG_SYMBOL_REQUEST;
     msg.u.sym_req.type = FIP_SYM_FUNCTION;
-    strcpy(msg.u.sym_req.sig.fn.name, "ClearBackground");
+    strcpy(msg.u.sym_req.sig.fn.name, "InitWindow");
     msg.u.sym_req.sig.fn.rets_len = 0;
     msg.u.sym_req.sig.fn.rets = NULL;
-    msg.u.sym_req.sig.fn.args_len = 1;
-    msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_type_t));
-    msg.u.sym_req.sig.fn.args[0].type = FIP_TYPE_STRUCT;
+
+    msg.u.sym_req.sig.fn.args_len = 3;
+    msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_type_t) * 3);
+
+    msg.u.sym_req.sig.fn.args[0].type = FIP_TYPE_PRIMITIVE;
     msg.u.sym_req.sig.fn.args[0].is_mutable = true;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.field_count = 4;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields =
-        malloc(sizeof(fip_type_t) * 4);
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[0].type = FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[0].is_mutable = true;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[0].u.prim = FIP_U8;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[1].type = FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[1].is_mutable = true;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[1].u.prim = FIP_U8;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[2].type = FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[2].is_mutable = true;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[2].u.prim = FIP_U8;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[3].type = FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[3].is_mutable = true;
-    msg.u.sym_req.sig.fn.args[0].u.struct_t.fields[3].u.prim = FIP_U8;
-    // "ClearBackground(Color)"
+    msg.u.sym_req.sig.fn.args[0].u.prim = FIP_I32;
+
+    msg.u.sym_req.sig.fn.args[1].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[1].is_mutable = true;
+    msg.u.sym_req.sig.fn.args[1].u.prim = FIP_I32;
+
+    msg.u.sym_req.sig.fn.args[2].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[2].is_mutable = false;
+    msg.u.sym_req.sig.fn.args[2].u.prim = FIP_STR;
+
     if (!fip_master_symbol_request(msg_buf, &msg)) {
         fip_print(0, FIP_INFO, "Goto kill");
         goto kill;
