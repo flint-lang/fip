@@ -2270,6 +2270,7 @@ uint8_t fip_master_await_responses(        //
     uint32_t *response_count,              //
     const fip_msg_type_t expected_msg_type //
 ) {
+#define FIP_TIMEOUT 1.0
     fip_print(0, FIP_INFO, "Awaiting Responses");
 
     // First we need to clear all old message responses
@@ -2308,7 +2309,7 @@ uint8_t fip_master_await_responses(        //
 
         bool message_received = false;
 
-        // Keep trying until we get a message or timeout (10 seconds)
+        // Keep trying until we get a message or timeout (1 second)
         while (!message_received) {
             // Check if we've exceeded timeout
             struct timespec now;
@@ -2316,7 +2317,7 @@ uint8_t fip_master_await_responses(        //
             double elapsed = ((double)(now.tv_sec - start.tv_sec)) +
                 ((double)(now.tv_nsec - start.tv_nsec) / 1000000000.0);
 
-            if (elapsed > 10.0) {
+            if (elapsed > FIP_TIMEOUT) {
                 fip_print(0, FIP_WARN,
                     "Timeout waiting for slave %d response for %f seconds",
                     i + 1, elapsed);
@@ -2334,7 +2335,7 @@ uint8_t fip_master_await_responses(        //
                     max_fd = stderr_fd;
             }
 
-            double remaining = 10.0 - elapsed;
+            double remaining = FIP_TIMEOUT - elapsed;
             timeout.tv_sec = (long)remaining;
             timeout.tv_usec = (long)((remaining - timeout.tv_sec) * 1000000);
 
