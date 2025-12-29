@@ -624,7 +624,7 @@ enum CXChildVisitResult visit_ast_node( //
     return CXChildVisit_Recurse;
 }
 
-void parse_c_file(const char *c_file) {
+void parse_c_file(char *c_file) {
     CXIndex index = clang_createIndex(0, 0);
     FILE *fp = popen("gcc -print-file-name=include", "r");
     char buf[512];

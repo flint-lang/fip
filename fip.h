@@ -828,7 +828,10 @@ void fip_print(                      //
     // Print the formatted message into the message buffer
     va_list args;
     va_start(args, format);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wformat=2"
     vsnprintf(message, sizeof(message), format, args);
+#pragma GCC diagnostic pop
     va_end(args);
 
     // Print the prefix and the message to stderr
@@ -843,8 +846,8 @@ void fip_print_msg(uint32_t id, const fip_msg_t *message) {
             break;
         case FIP_MSG_CONNECT_REQUEST:
             fip_print(id, FIP_DEBUG, "FIP_MSG_CONNECT_REQUEST: {");
-            fip_print(id, FIP_DEBUG, "  .setup_ok: ", //
-                message->u.con_req.setup_ok           //
+            fip_print(id, FIP_DEBUG, "  .setup_ok: %d", //
+                message->u.con_req.setup_ok             //
             );
             fip_print(id, FIP_DEBUG, "  .version: %d.%d:%d", //
                 message->u.con_req.version.major,            //

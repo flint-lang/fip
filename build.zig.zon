@@ -1,0 +1,12 @@
+.{
+    .name = .fip,
+    .version = "0.2.5",
+    .fingerprint = 0x5721cf5239f7718d, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
