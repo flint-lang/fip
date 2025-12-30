@@ -721,9 +721,7 @@ void fip_print(                      //
     FILETIME ft;
 
     // Get system time with precision
-    GetSystemTimePreciseAsFileTime(&ft); // Windows 8+ for high precision
-    // For older Windows, use: GetSystemTimeAsFileTime(&ft);
-
+    GetSystemTimeAsFileTime(&ft);
     // Convert to SYSTEMTIME for easy access to components
     FileTimeToSystemTime(&ft, &st);
 
@@ -740,8 +738,8 @@ void fip_print(                      //
     ULARGE_INTEGER uli;
     uli.LowPart = ft.dwLowDateTime;
     uli.HighPart = ft.dwHighDateTime;
-    microseconds =
-        (uli.QuadPart / 10) % 1000; // Convert to microseconds, get remainder
+    // Convert to microseconds, get remainder
+    microseconds = (uli.QuadPart / 10) % 1000;
 #else
     // Linux/POSIX-specific time handling
     struct timespec ts;
