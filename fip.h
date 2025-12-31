@@ -106,8 +106,8 @@ static void msleep(unsigned int ms) {
 
 // The version of the FIP
 #define FIP_MAJOR 0
-#define FIP_MINOR 2
-#define FIP_PATCH 5
+#define FIP_MINOR 3
+#define FIP_PATCH 0
 
 #define FIP_TYPE_COUNT 12
 #define FIP_MAX_MODULE_NAME_LEN 16
