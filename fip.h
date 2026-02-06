@@ -606,10 +606,12 @@ bool fip_master_compile_request( //
 void fip_master_cleanup();
 
 /// @function `fip_master_load_config`
-/// @brief Loads the master config from the `.fip/config/fip.toml` file
+/// @brief Loads the master config from the file at the `config_path`
 ///
+/// @param `config_path` The path to the `fip.toml` config file located in
+/// `<ProjectPath>/.fip/config/.toml`
 /// @return `fip_master_config_t` The loaded configuration
-fip_master_config_t fip_master_load_config();
+fip_master_config_t fip_master_load_config(const char *config_path);
 
 #endif // End of #ifdef FIP_MASTER
 
@@ -2026,13 +2028,12 @@ uint8_t fip_master_await_responses(        //
     return wrong_count;
 }
 
-fip_master_config_t fip_master_load_config() {
-    const char *file_path = ".fip/config/fip.toml";
-    FILE *fp = fopen(file_path, "r");
+fip_master_config_t fip_master_load_config(const char *config_path) {
+    FILE *fp = fopen(config_path, "r");
     fip_master_config_t config = {0};
     config.ok = false;
     if (!fp) {
-        fip_print(0, FIP_WARN, "Config file not found: %s", file_path);
+        fip_print(0, FIP_WARN, "Config file not found: %s", config_path);
         return config;
     }
     toml_result_t toml = toml_parse_file(fp);
@@ -2435,13 +2436,12 @@ uint8_t fip_master_await_responses(        //
     return wrong_count;
 }
 
-fip_master_config_t fip_master_load_config() {
-    const char *file_path = ".fip/config/fip.toml";
-    FILE *fp = fopen(file_path, "r");
+fip_master_config_t fip_master_load_config(const char *config_path) {
+    FILE *fp = fopen(config_path, "r");
     fip_master_config_t config = {0};
     config.ok = false;
     if (!fp) {
-        fip_print(0, FIP_WARN, "Config file not found: %s", file_path);
+        fip_print(0, FIP_WARN, "Config file not found: %s", config_path);
         return config;
     }
     toml_result_t toml = toml_parse_file(fp);

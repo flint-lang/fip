@@ -18,7 +18,9 @@ int main() {
     char msg_buf[FIP_MSG_SIZE] = {0};
 
     // First parse the config file (fip.toml)
-    fip_master_config_t config_file = fip_master_load_config();
+    fip_master_config_t config_file = fip_master_load_config( //
+        ".fip/config/fip.toml"                                //
+    );
     if (!config_file.ok) {
         goto kill;
     }
