@@ -1899,7 +1899,7 @@ bool fip_spawn_interop_module(      //
     si.hStdError = stderr_write;
 
     if (!CreateProcessA(                                                   //
-            NULL, cmdline, NULL, NULL, TRUE, 0, root_path, NULL, &si, &pi) //
+            NULL, cmdline, NULL, NULL, TRUE, 0, NULL, root_path, &si, &pi) //
     ) {
         fip_print(0, FIP_WARN, "Failed to spawn slave %s: %d", id,
             GetLastError());
