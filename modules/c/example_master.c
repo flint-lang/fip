@@ -12,6 +12,12 @@ fip_master_state_t master_state = {0};
 #include <unistd.h>
 
 int main() {
+    char cwd_path[256];
+    if (getcwd(cwd_path, sizeof(cwd_path)) == NULL) {
+        perror("getcwd() failed");
+        return 1;
+    }
+    printf("cwd_path = \"%s\"\n", cwd_path);
     fip_interop_modules_t interop_modules = {0};
 
     // Create a buffer used for sending messages
@@ -29,9 +35,7 @@ int main() {
     for (uint8_t i = 0; i < config_file.enabled_count; i++) {
         const char *mod = config_file.enabled_modules[i];
         fip_print(0, FIP_INFO, "Starting the %s module...", mod);
-        char module_path[13 + FIP_MAX_MODULE_NAME_LEN] = {0};
-        snprintf(module_path, sizeof(module_path), ".fip/modules/%s", mod);
-        fip_spawn_interop_module(&interop_modules, module_path);
+        fip_spawn_interop_module(&interop_modules, cwd_path, mod);
     }
 
     // Initialize master with the spawned modules

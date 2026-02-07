@@ -518,10 +518,14 @@ void fip_print_slave_streams();
 /// modules in the interop modules parameter
 ///
 /// @param `modules` A pointer to the structure containing all the module PIDs
-/// @param `binary` The interop module to start
+/// @param `root_path` The root path of the project (the directory where the
+/// .fip directory is contained). The `module` program will be started in this
+/// directory
+/// @param `module` The interop module to start
 /// @return `bool` Whether the interop module process creation was successful
 bool fip_spawn_interop_module(      //
     fip_interop_modules_t *modules, //
+    const char *root_path,          //
     const char *module              //
 );
 
@@ -1851,6 +1855,7 @@ static win_process_info_t win_processes[FIP_MAX_SLAVES];
 
 bool fip_spawn_interop_module(      //
     fip_interop_modules_t *modules, //
+    const char *root_path,          //
     const char *module              //
 ) {
     char _module[256] = {0};
@@ -1893,8 +1898,9 @@ bool fip_spawn_interop_module(      //
     si.hStdOutput = stdout_write;
     si.hStdError = stderr_write;
 
-    if (!CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, NULL, &si,
-            &pi)) {
+    if (!CreateProcessA(                                                   //
+            NULL, cmdline, NULL, NULL, TRUE, 0, root_path, NULL, &si, &pi) //
+    ) {
         fip_print(0, FIP_WARN, "Failed to spawn slave %s: %d", id,
             GetLastError());
         CloseHandle(stdin_read);
@@ -2157,6 +2163,7 @@ toml_result_t fip_slave_load_config( //
 
 bool fip_spawn_interop_module(      //
     fip_interop_modules_t *modules, //
+    const char *root_path,          //
     const char *module              //
 ) {
     char _module[256] = {0};
@@ -2183,31 +2190,11 @@ bool fip_spawn_interop_module(      //
         return false;
     }
 
-    // Create file actions to redirect slave's stdin/stdout to our pipes
-    posix_spawn_file_actions_t actions;
-    posix_spawn_file_actions_init(&actions);
-
-    // Redirect slave's stdin to read from our stdin_pipe
-    posix_spawn_file_actions_adddup2(&actions, stdin_pipe[0], STDIN_FILENO);
-    posix_spawn_file_actions_addclose(&actions, stdin_pipe[1]);
-
-    // Redirect slave's stdout to write to our stdout_pipe
-    posix_spawn_file_actions_adddup2(&actions, stdout_pipe[1], STDOUT_FILENO);
-    posix_spawn_file_actions_addclose(&actions, stdout_pipe[0]);
-
-    // Redirect slave's stderr to write to our stderr_pipe
-    posix_spawn_file_actions_adddup2(&actions, stderr_pipe[1], STDERR_FILENO);
-    posix_spawn_file_actions_addclose(&actions, stderr_pipe[0]);
-
-    int status = posix_spawn(&modules->pids[modules->active_count], _module,
-        &actions, // Use file actions
-        NULL,     // No special attributes
-        argv, environ);
-
-    posix_spawn_file_actions_destroy(&actions);
-
-    if (status != 0) {
-        fip_print(0, FIP_WARN, "Failed to spawn slave %s: %d", id, status);
+    pid_t pid = fork();
+    if (pid < 0) {
+        // fork failed
+        fip_print(0, FIP_ERROR, "Failed to fork to spawn slave %s", id);
+        // cleanup
         close(stdin_pipe[0]);
         close(stdin_pipe[1]);
         close(stdout_pipe[0]);
@@ -2217,11 +2204,52 @@ bool fip_spawn_interop_module(      //
         return false;
     }
 
-    // Close slave's ends of the pipes (they're now handled by the spawned
-    // process)
-    close(stdin_pipe[0]);
-    close(stdout_pipe[1]);
-    close(stderr_pipe[1]);
+    if (pid == 0) {
+        // Child: set up child's end of pipes, change cwd, exec
+
+        // Redirect child's stdin/stdout/stderr to pipes
+        // Child should read from stdin_pipe[0], write to stdout_pipe[1],
+        // stderr_pipe[1]
+        if (dup2(stdin_pipe[0], STDIN_FILENO) == -1)
+            _exit(127);
+        if (dup2(stdout_pipe[1], STDOUT_FILENO) == -1)
+            _exit(127);
+        if (dup2(stderr_pipe[1], STDERR_FILENO) == -1)
+            _exit(127);
+
+        // Close unused descriptors in child
+        close(stdin_pipe[0]);
+        close(stdin_pipe[1]);
+        close(stdout_pipe[0]);
+        close(stdout_pipe[1]);
+        close(stderr_pipe[0]);
+        close(stderr_pipe[1]);
+
+        // Change working directory to root directoy
+        if (chdir(root_path) != 0) {
+            // cannot change dir => fatal for child
+            // You can log to stderr but prefer to exit
+            perror("chdir");
+            _exit(127);
+        }
+
+        // Execute the module. Use execvp so PATH lookup behaves like
+        // posix_spawn did.
+        fprintf(stderr, "_module = \"%s\"\n", _module);
+        execvp(_module, argv);
+
+        // If execvp returns, it failed
+        perror("execvp");
+        _exit(127);
+    }
+
+    // Parent: close child's ends of the pipes
+    close(stdin_pipe[0]);  // parent's write end is stdin_pipe[1]
+    close(stdout_pipe[1]); // parent's read end is stdout_pipe[0]
+    close(stderr_pipe[1]); // parent's read end is stderr_pipe[0]
+
+    // Store PID
+    modules->pids[modules->active_count] = pid;
 
     // Store master's ends of the pipes
     master_state.slave_stdin[modules->active_count] =
@@ -2236,6 +2264,10 @@ bool fip_spawn_interop_module(      //
         !master_state.slave_stderr[modules->active_count]) {
         fip_print(0, FIP_ERROR, "Failed to create FILE streams for slave %s",
             id);
+        // Cleanup: if needed, kill child? up to your policy. We'll close fds.
+        close(stdin_pipe[1]);
+        close(stdout_pipe[0]);
+        close(stderr_pipe[0]);
         return false;
     }
 
