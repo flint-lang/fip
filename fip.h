@@ -2235,7 +2235,6 @@ bool fip_spawn_interop_module(      //
 
         // Execute the module. Use execvp so PATH lookup behaves like
         // posix_spawn did.
-        fprintf(stderr, "_module = \"%s\"\n", _module);
         execvp(_module, argv);
 
         // If execvp returns, it failed
