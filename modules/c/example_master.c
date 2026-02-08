@@ -9,6 +9,7 @@ fip_log_level_t LOG_LEVEL = FIP_WARN;
 #endif
 fip_master_state_t master_state = {0};
 
+#include <stdalign.h>
 #include <unistd.h>
 
 int main() {
@@ -21,7 +22,7 @@ int main() {
     fip_interop_modules_t interop_modules = {0};
 
     // Create a buffer used for sending messages
-    char msg_buf[FIP_MSG_SIZE] = {0};
+    _Alignas(_Alignof(size_t)) char msg_buf[FIP_MSG_SIZE] = {0};
 
     // First parse the config file (fip.toml)
     fip_master_config_t config_file = fip_master_load_config( //

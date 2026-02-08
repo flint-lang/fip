@@ -11,6 +11,7 @@ fip_log_level_t LOG_LEVEL = FIP_WARN;
 #include <clang-c/Index.h>
 
 #include <assert.h>
+#include <stdalign.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -1191,7 +1192,7 @@ int main(int argc, char *argv[]) {
     }
     fip_print(ID, FIP_INFO, "starting...");
 
-    char msg_buf[1024] = {0};
+    _Alignas(_Alignof(size_t)) char msg_buf[FIP_MSG_SIZE] = {0};
 
     // Initialize slave for stdio communication
     if (!fip_slave_init(ID)) {
