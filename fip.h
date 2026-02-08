@@ -87,6 +87,11 @@ extern int clock_gettime(clockid_t clk_id, struct timespec *tp);
 #define FIP_MSG_SIZE 1024
 #define FIP_SLAVE_DELAY_MS 10
 
+#ifndef FIP_ALIGNCAST
+#define FIP_ALIGNCAST(to_type, value_ptr)                                      \
+    (to_type *)__builtin_assume_aligned(value_ptr, _Alignof(to_type))
+#endif
+
 #ifdef __WIN32__
 #include <windows.h>
 [[maybe_unused]]
@@ -148,6 +153,7 @@ typedef enum : uint8_t {
     FIP_SYM_UNKNOWN = 0,
     FIP_SYM_FUNCTION,
     FIP_SYM_DATA,
+    FIP_SYM_ENUM,
 } fip_msg_symbol_type_e;
 
 /// @typedef `fip_log_level_t`
@@ -202,6 +208,17 @@ typedef struct {
     uint8_t levels_back;
 } fip_type_recursive_t;
 
+/// @typedef `fip_type_enum_t`
+/// @brief The struct representing enum types
+typedef struct {
+    uint8_t bit_width;
+    uint8_t is_signed;
+    uint8_t value_count;
+    // The value is a size_t because it can be anything from i1 up to an u64 /
+    // i64. The underlying enum type can differ
+    size_t *values;
+} fip_type_enum_t;
+
 /// @typedef `fip_type_e`
 /// @brief The enum containing all possible FIP types there are
 typedef enum {
@@ -209,6 +226,7 @@ typedef enum {
     FIP_TYPE_PTR,
     FIP_TYPE_STRUCT,
     FIP_TYPE_RECURSIVE,
+    FIP_TYPE_ENUM,
 } fip_type_e;
 
 /// @typedef `fip_type_t`
@@ -221,6 +239,7 @@ typedef struct fip_type_t {
         fip_type_ptr_t ptr;
         fip_type_struct_t struct_t;
         fip_type_recursive_t recursive;
+        fip_type_enum_t enum_t;
     } u;
 } fip_type_t;
 
@@ -230,7 +249,7 @@ typedef struct fip_type_t {
  * =================
  */
 
-/// @typedef `fip_fn_sig_t`
+/// @typedef `fip_sig_fn_t`
 /// @brief Struct representing the signature of a FIP-defined function
 typedef struct {
     char name[128];
@@ -239,6 +258,18 @@ typedef struct {
     uint8_t rets_len;
     fip_type_t *rets;
 } fip_sig_fn_t;
+
+/// @typedef `fip_sig_enum_t`
+/// @brief Struct representing the signature of a FIP-defined enum
+typedef struct {
+    char name[128];
+    fip_type_prim_e type;
+    uint8_t value_count;
+    char **tags;
+    // The value is a size_t because it can be anything from i1 up to an u64 /
+    // i64. The underlying enum type can differ
+    size_t *values;
+} fip_sig_enum_t;
 
 /*
  * ==================
@@ -264,6 +295,7 @@ typedef struct {
     fip_msg_symbol_type_e type;
     union {
         fip_sig_fn_t fn;
+        fip_sig_enum_t enum_t;
     } sig;
 } fip_msg_symbol_request_t;
 
@@ -275,6 +307,7 @@ typedef struct {
     fip_msg_symbol_type_e type;
     union {
         fip_sig_fn_t fn;
+        fip_sig_enum_t enum_t;
     } sig;
 } fip_msg_symbol_response_t;
 
@@ -879,6 +912,10 @@ void fip_print_msg(uint32_t id, const fip_msg_t *message) {
                     fip_print(id, FIP_DEBUG, "  .type: DATA");
                     fip_print(id, FIP_DEBUG, "  .signature: TODO");
                     break;
+                case FIP_SYM_ENUM:
+                    fip_print(id, FIP_DEBUG, "  .type: ENUM");
+                    fip_print(id, FIP_DEBUG, "  .signature: TODO");
+                    break;
             }
             fip_print(id, FIP_DEBUG, "}");
             break;
@@ -900,6 +937,10 @@ void fip_print_msg(uint32_t id, const fip_msg_t *message) {
                     break;
                 case FIP_SYM_DATA:
                     fip_print(id, FIP_DEBUG, "  .type: DATA");
+                    fip_print(id, FIP_DEBUG, "  .signature: TODO");
+                    break;
+                case FIP_SYM_ENUM:
+                    fip_print(id, FIP_DEBUG, "  .type: ENUM");
                     fip_print(id, FIP_DEBUG, "  .signature: TODO");
                     break;
             }
@@ -983,6 +1024,20 @@ void fip_encode_type(          //
         case FIP_TYPE_RECURSIVE:
             buffer[(*idx)++] = (char)type->u.recursive.levels_back;
             break;
+        case FIP_TYPE_ENUM:
+            buffer[(*idx)++] = (char)type->u.enum_t.bit_width;
+            buffer[(*idx)++] = (char)type->u.enum_t.is_signed;
+            buffer[(*idx)++] = (char)type->u.enum_t.value_count;
+            // Add padding to ensure the values are aligned inside the buffer
+            while (*idx % 8 != 0) {
+                buffer[(*idx)++] = 0;
+            }
+            for (uint8_t i = 0; i < type->u.enum_t.value_count; i++) {
+                size_t *buffer_ptr = FIP_ALIGNCAST(size_t, &buffer[*idx]);
+                *buffer_ptr = type->u.enum_t.values[i];
+                idx += 8;
+            }
+            break;
     }
 }
 
@@ -1046,6 +1101,8 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
                     break;
                 case FIP_SYM_DATA:
                     break;
+                case FIP_SYM_ENUM:
+                    break;
             }
             break;
         case FIP_MSG_SYMBOL_RESPONSE:
@@ -1063,6 +1120,8 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
                     fip_encode_sig_fn(buffer, &idx, &message->u.sym_res.sig.fn);
                     break;
                 case FIP_SYM_DATA:
+                    break;
+                case FIP_SYM_ENUM:
                     break;
             }
             break;
@@ -1133,6 +1192,26 @@ void fip_decode_type(                //
         case FIP_TYPE_RECURSIVE:
             type->u.recursive.levels_back = (uint8_t)buffer[(*idx)++];
             break;
+        case FIP_TYPE_ENUM: {
+            type->u.enum_t.bit_width = buffer[(*idx)++];
+            type->u.enum_t.is_signed = buffer[(*idx)++];
+            const uint8_t value_count = buffer[(*idx)++];
+            type->u.enum_t.value_count = value_count;
+            type->u.enum_t.values = (size_t *)malloc( //
+                sizeof(size_t) * value_count          //
+            );
+            // Skip padding in the message to ensure the values are aligned
+            while (*idx % 8 != 0) {
+                (*idx)++;
+            }
+            for (uint8_t i = 0; i < value_count; i++) {
+                type->u.enum_t.values[i] = *FIP_ALIGNCAST( //
+                    size_t, &buffer[*idx]                  //
+                );
+                idx += 8;
+            }
+            break;
+        }
     }
 }
 
@@ -1199,6 +1278,8 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
                     break;
                 case FIP_SYM_DATA:
                     break;
+                case FIP_SYM_ENUM:
+                    break;
             }
             break;
         case FIP_MSG_SYMBOL_RESPONSE:
@@ -1216,6 +1297,8 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
                     fip_decode_sig_fn(buffer, &idx, &message->u.sym_res.sig.fn);
                     break;
                 case FIP_SYM_DATA:
+                    break;
+                case FIP_SYM_ENUM:
                     break;
             }
             break;
@@ -1271,6 +1354,9 @@ void fip_free_type(fip_type_t *type) {
             break;
         case FIP_TYPE_RECURSIVE:
             break;
+        case FIP_TYPE_ENUM:
+            free(type->u.enum_t.values);
+            break;
     }
 }
 
@@ -1314,6 +1400,9 @@ void fip_free_msg(fip_msg_t *message) {
                 case FIP_SYM_DATA:
                     // Not implemented yet
                     assert(false);
+                case FIP_SYM_ENUM:
+                    // Not implemented yet
+                    assert(false);
             }
             break;
         case FIP_MSG_SYMBOL_RESPONSE:
@@ -1345,6 +1434,9 @@ void fip_free_msg(fip_msg_t *message) {
                     break;
                 }
                 case FIP_SYM_DATA:
+                    // Not implemented yet
+                    assert(false);
+                case FIP_SYM_ENUM:
                     // Not implemented yet
                     assert(false);
             }
@@ -1455,6 +1547,77 @@ void fip_print_type(       //
             buffer[(*idx)++] = (char)('0' + part_1);
             buffer[(*idx)++] = '}';
             break;
+        }
+        case FIP_TYPE_ENUM: {
+            buffer[(*idx)++] = 'e';
+            buffer[(*idx)++] = 'n';
+            buffer[(*idx)++] = 'u';
+            buffer[(*idx)++] = 'm';
+            buffer[(*idx)++] = '(';
+            if (type->u.enum_t.is_signed) {
+                buffer[(*idx)++] = 'i';
+            } else {
+                buffer[(*idx)++] = 'u';
+            }
+            if (type->u.enum_t.bit_width > 10) {
+                assert(type->u.enum_t.bit_width < 100);
+                const uint8_t bw10 = type->u.enum_t.bit_width / 10;
+                buffer[(*idx)++] = '0' + bw10;
+                const uint8_t bw1 = (type->u.enum_t.bit_width - (bw10 * 10));
+                buffer[(*idx)++] = '0' + bw1;
+            } else {
+                buffer[(*idx)++] = '0' + type->u.enum_t.bit_width;
+            }
+            buffer[(*idx)++] = ')';
+            buffer[(*idx)++] = '{';
+            for (uint8_t i = 0; i < type->u.enum_t.value_count; i++) {
+                uint64_t raw = (uint64_t)type->u.enum_t.values[i];
+                uint8_t bw = type->u.enum_t.bit_width;
+
+                // Compute mask for bw bits
+                uint64_t mask = (bw == 64) //
+                    ? UINT64_MAX           //
+                    : ((1ull << bw) - 1ull);
+                uint64_t v = raw & mask;
+
+                if (type->u.enum_t.is_signed) {
+                    // sign-extend v from bw bits to int64_t
+                    int64_t sval;
+                    if (bw == 64) {
+                        // full 64-bit two's complement
+                        sval = (int64_t)v;
+                    } else {
+                        uint64_t sign_bit = 1ull << (bw - 1);
+                        if (v & sign_bit) {
+                            // extend ones above bw
+                            uint64_t extended = v | (~mask);
+                            sval = (int64_t)extended;
+                        } else {
+                            sval = (int64_t)v;
+                        }
+                    }
+                    // append signed decimal
+                    int wrote =
+                        snprintf(&buffer[*idx], 20, "%lld", (long long)sval);
+                    if (wrote < 0)
+                        wrote = 0;
+                    *idx += wrote;
+                } else {
+                    // unsigned
+                    unsigned long long uval = (unsigned long long)v;
+                    int wrote = snprintf(&buffer[*idx], 20, "%llu", uval);
+                    if (wrote < 0)
+                        wrote = 0;
+                    *idx += wrote;
+                }
+
+                // separator between values
+                if (i + 1 < type->u.enum_t.value_count) {
+                    buffer[(*idx)++] = ',';
+                    buffer[(*idx)++] = ' ';
+                }
+            }
+            buffer[(*idx)++] = '}';
         }
     }
 }

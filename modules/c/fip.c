@@ -61,9 +61,10 @@ typedef struct {
     bool needed;
     char source_file_path[512];
     int line_number;
-    fip_msg_symbol_type_t type;
+    fip_msg_symbol_type_e type;
     union {
         fip_sig_fn_t fn;
+        fip_sig_enum_t enum_t;
     } signature;
 } fip_c_symbol_t;
 
@@ -80,6 +81,19 @@ typedef struct {
     int current_index;
     uint32_t module_id;
 } field_visitor_data;
+
+typedef struct {
+    size_t *values;
+    int current_index;
+    uint32_t module_id;
+} enum_visitor_data;
+
+typedef struct {
+    char **tags;
+    size_t *values;
+    int current_index;
+    uint32_t module_id;
+} enum_sig_visitor_data;
 
 /*
  * ==============================================
@@ -275,6 +289,55 @@ enum CXChildVisitResult struct_field_visitor( //
     return CXChildVisit_Continue;
 }
 
+enum CXChildVisitResult enum_value_visitor( //
+    CXCursor cursor,                        //
+    [[maybe_unused]] CXCursor parent,       //
+    CXClientData client_data                //
+) {
+    enum_visitor_data *data = (enum_visitor_data *)client_data;
+
+    if (clang_getCursorKind(cursor) == CXCursor_EnumConstantDecl) {
+        data->values[data->current_index++] =
+            (size_t)clang_getEnumConstantDeclValue(cursor);
+    }
+
+    return CXChildVisit_Continue;
+}
+
+enum CXChildVisitResult enum_sig_visitor( //
+    CXCursor cursor,                      //
+    [[maybe_unused]] CXCursor parent,     //
+    CXClientData client_data              //
+) {
+    enum_sig_visitor_data *data = (enum_sig_visitor_data *)client_data;
+
+    if (clang_getCursorKind(cursor) == CXCursor_EnumConstantDecl) {
+        CXString name_str = clang_getCursorSpelling(cursor);
+        const char *name = clang_getCString(name_str);
+        size_t len = strlen(name);
+        data->tags[data->current_index] = (char *)malloc(len + 1);
+        strcpy(data->tags[data->current_index], name);
+        clang_disposeString(name_str);
+        data->values[data->current_index] =
+            (size_t)clang_getEnumConstantDeclValue(cursor);
+        data->current_index++;
+    }
+
+    return CXChildVisit_Continue;
+}
+
+enum CXChildVisitResult count_enum_constants_visitor( //
+    CXCursor cursor,                                  //
+    [[maybe_unused]] CXCursor parent,                 //
+    CXClientData client_data                          //
+) {
+    int *count = (int *)client_data;
+    if (clang_getCursorKind(cursor) == CXCursor_EnumConstantDecl) {
+        (*count)++;
+    }
+    return CXChildVisit_Continue;
+}
+
 bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
     CXType canonical = clang_getCanonicalType(clang_type);
     fip_print(ID, FIP_DEBUG, "Resolving type at depth %u", stack.len);
@@ -464,6 +527,83 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
                 "Successfully processed struct with %d fields", field_count);
             goto ok;
         }
+        case CXType_Enum: {
+            fip_print(ID, FIP_TRACE, "Processing enum type");
+            fip_type->type = FIP_TYPE_ENUM;
+
+            CXCursor type_cursor = clang_getTypeDeclaration(canonical);
+            CXType integer_type = clang_getEnumDeclIntegerType(type_cursor);
+            CXType canon_int = clang_getCanonicalType(integer_type);
+
+            // Determine is_signed
+            uint8_t is_signed = 1;
+            switch (canon_int.kind) {
+                case CXType_Char_U:
+                case CXType_UChar:
+                case CXType_UShort:
+                case CXType_UInt:
+                case CXType_ULong:
+                case CXType_ULongLong:
+                case CXType_UInt128:
+                    is_signed = 0;
+                    break;
+                default:
+                    is_signed = 1;
+            }
+            fip_type->u.enum_t.is_signed = is_signed;
+
+            // bit_width, for now enums are just 'int' values internally, so 4
+            // byte signed
+            long long byte_size = clang_Type_getSizeOf(canon_int);
+            if (byte_size <= 0) {
+                fip_print(ID, FIP_WARN, "Invalid enum underlying type size");
+                goto fail;
+            }
+            fip_type->u.enum_t.bit_width = (uint8_t)(byte_size * 8);
+
+            // Count constants first
+            int value_count = 0;
+            clang_visitChildren(                                        //
+                type_cursor, count_enum_constants_visitor, &value_count //
+            );
+            fip_print(ID, FIP_TRACE, "Enum has %d constants", value_count);
+            if (value_count <= 0 || value_count > 255) {
+                fip_print(ID, FIP_WARN, "Invalid enum constant count: %d",
+                    value_count);
+                goto fail;
+            }
+
+            fip_type->u.enum_t.value_count = (uint8_t)value_count;
+            fip_type->u.enum_t.values = malloc( //
+                sizeof(size_t) * value_count    //
+            );
+
+            // Structure to pass data to the visitor
+            enum_visitor_data visitor_data = {
+                .values = fip_type->u.enum_t.values,
+                .current_index = 0,
+                .module_id = ID,
+            };
+
+            // Visit each constant and collect its value
+            clang_visitChildren(                               //
+                type_cursor, enum_value_visitor, &visitor_data //
+            );
+
+            // Check if we processed the expected number of constants
+            if (visitor_data.current_index != value_count) {
+                fip_print(                                                  //
+                    ID, FIP_WARN, "Processed %d constants but expected %d", //
+                    visitor_data.current_index, value_count                 //
+                );
+                free(fip_type->u.enum_t.values);
+                goto fail;
+            }
+
+            fip_print(ID, FIP_TRACE,
+                "Successfully processed enum with %d constants", value_count);
+            goto ok;
+        }
         case CXType_Complex: {
             // TODO: Handle complex types if needed
             fip_print(ID, FIP_ERROR, "Complex types not yet supported");
@@ -545,6 +685,87 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
     return true;
 }
 
+bool extract_enum_signature(CXCursor cursor, fip_sig_enum_t *enum_sig) {
+    CXString cname = clang_getCursorSpelling(cursor);
+    const char *name_cstr = clang_getCString(cname);
+    if (strlen(name_cstr) == 0) {
+        clang_disposeString(cname);
+        return false;
+    }
+    strncpy(enum_sig->name, name_cstr, sizeof(enum_sig->name) - 1);
+    clang_disposeString(cname);
+
+    CXType integer_type = clang_getEnumDeclIntegerType(cursor);
+    CXType canon = clang_getCanonicalType(integer_type);
+    fip_type_prim_e prim;
+    switch (canon.kind) {
+        case CXType_Char_U:
+        case CXType_UChar:
+            prim = FIP_U8;
+            break;
+        case CXType_UShort:
+            prim = FIP_U16;
+            break;
+        case CXType_UInt:
+            prim = FIP_U32;
+            break;
+        case CXType_ULong:
+        case CXType_ULongLong:
+            prim = FIP_U64;
+            break;
+        case CXType_Char_S:
+        case CXType_SChar:
+            prim = FIP_I8;
+            break;
+        case CXType_Short:
+            prim = FIP_I16;
+            break;
+        case CXType_Int:
+            prim = FIP_I32;
+            break;
+        case CXType_Long:
+        case CXType_LongLong:
+            prim = FIP_I64;
+            break;
+        default:
+            fip_print(ID, FIP_WARN, "Unsupported underlying enum type for %s",
+                enum_sig->name);
+            return false;
+    }
+    enum_sig->type = prim;
+
+    int value_count = 0;
+    clang_visitChildren(cursor, count_enum_constants_visitor, &value_count);
+    if (value_count <= 0 || value_count > 255) {
+        fip_print(ID, FIP_WARN, "Invalid enum constant count: %d", value_count);
+        return false;
+    }
+    enum_sig->value_count = (uint8_t)value_count;
+
+    if (value_count > 0) {
+        enum_sig->tags = (char **)malloc(sizeof(char *) * value_count);
+        enum_sig->values = (size_t *)malloc(sizeof(size_t) * value_count);
+        enum_sig_visitor_data data = {.tags = enum_sig->tags,
+            .values = enum_sig->values,
+            .current_index = 0,
+            .module_id = ID};
+        clang_visitChildren(cursor, enum_sig_visitor, &data);
+        if (data.current_index != value_count) {
+            for (int i = 0; i < data.current_index; ++i) {
+                free(enum_sig->tags[i]);
+            }
+            free(enum_sig->tags);
+            free(enum_sig->values);
+            return false;
+        }
+    } else {
+        enum_sig->tags = NULL;
+        enum_sig->values = NULL;
+    }
+
+    return true;
+}
+
 enum CXChildVisitResult visit_ast_node( //
     CXCursor cursor,                    //
     [[maybe_unused]] CXCursor parent,   //
@@ -616,6 +837,39 @@ enum CXChildVisitResult visit_ast_node( //
                 symbol.signature.fn.name, symbol.line_number            //
             );
             fip_print_sig_fn(ID, &symbol.signature.fn);
+
+            symbol_count++;
+        }
+    } else if (kind == CXCursor_EnumDecl) {
+        if (!clang_isCursorDefinition(cursor)) {
+            return CXChildVisit_Continue;
+        }
+
+        if (symbol_count >= MAX_SYMBOLS) {
+            fip_print(                                              //
+                ID, FIP_WARN,                                       //
+                "Maximum symbols reached, skipping remaining enums" //
+            );
+            return CXChildVisit_Break;
+        }
+
+        // Extract enum information
+        fip_c_symbol_t symbol = {0};
+        strncpy(symbol.source_file_path, file_path,
+            sizeof(symbol.source_file_path) - 1);
+        symbol.needed = false;
+        symbol.line_number = (int)line;
+        symbol.type = FIP_SYM_ENUM;
+
+        if (extract_enum_signature(cursor, &symbol.signature.enum_t)) {
+            symbols[symbol_count] = symbol;
+
+            fip_print(                                           //
+                ID, FIP_INFO, "Found enum: '%s' at line %d",     //
+                symbol.signature.enum_t.name, symbol.line_number //
+            );
+            // fip_print_sig_enum(ID, &symbol.signature.enum_t); // Uncomment if
+            // print function exists
 
             symbol_count++;
         }
