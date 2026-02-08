@@ -1035,7 +1035,7 @@ void fip_encode_type(          //
             for (uint8_t i = 0; i < type->u.enum_t.value_count; i++) {
                 size_t *buffer_ptr = FIP_ALIGNCAST(size_t, &buffer[*idx]);
                 *buffer_ptr = type->u.enum_t.values[i];
-                idx += 8;
+                *idx += 8;
             }
             break;
     }
@@ -1208,7 +1208,7 @@ void fip_decode_type(                //
                 type->u.enum_t.values[i] = *FIP_ALIGNCAST( //
                     size_t, &buffer[*idx]                  //
                 );
-                idx += 8;
+                *idx += 8;
             }
             break;
         }
