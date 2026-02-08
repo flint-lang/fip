@@ -112,7 +112,7 @@ static void msleep(unsigned int ms) {
 #define FIP_TYPE_COUNT 12
 #define FIP_MAX_MODULE_NAME_LEN 16
 
-/// @typedef `fip_type_prim_enum_t`
+/// @typedef `fip_type_prim_e`
 /// @brief Enum of all possible primitive types supported by FIP
 typedef enum : uint8_t {
     FIP_VOID = 0, // void
@@ -128,9 +128,9 @@ typedef enum : uint8_t {
     FIP_F64,      // double
     FIP_BOOL,     // bool (byte)
     FIP_STR,      // char*
-} fip_type_prim_enum_t;
+} fip_type_prim_e;
 
-/// @typedef `fip_msg_type_t`
+/// @typedef `fip_msg_type_e`
 /// @bfief Enum of all possible messages the FIP can handle
 typedef enum : uint8_t {
     FIP_MSG_UNKNOWN = 0,     // Unknown message
@@ -140,15 +140,15 @@ typedef enum : uint8_t {
     FIP_MSG_COMPILE_REQUEST, // Master requesting all slaves to compile
     FIP_MSG_OBJECT_RESPONSE, // Slave responding compilation with .o file
     FIP_MSG_KILL,            // Kill command comes last
-} fip_msg_type_t;
+} fip_msg_type_e;
 
-/// @typedef `fip_msg_symbol_type_t`
+/// @typedef `fip_msg_symbol_type_e`
 /// @brief Enum of all possible symbol types
 typedef enum : uint8_t {
     FIP_SYM_UNKNOWN = 0,
     FIP_SYM_FUNCTION,
     FIP_SYM_DATA,
-} fip_msg_symbol_type_t;
+} fip_msg_symbol_type_e;
 
 /// @typedef `fip_log_level_t`
 /// @breif Enum of all possible log levels of FIP
@@ -202,22 +202,22 @@ typedef struct {
     uint8_t levels_back;
 } fip_type_recursive_t;
 
-/// @typedef `fip_type_enum_t`
+/// @typedef `fip_type_e`
 /// @brief The enum containing all possible FIP types there are
 typedef enum {
     FIP_TYPE_PRIMITIVE,
     FIP_TYPE_PTR,
     FIP_TYPE_STRUCT,
     FIP_TYPE_RECURSIVE,
-} fip_type_enum_t;
+} fip_type_e;
 
 /// @typedef `fip_type_t`
 /// @brief The struct representing a type in FIP
 typedef struct fip_type_t {
-    fip_type_enum_t type;
+    fip_type_e type;
     bool is_mutable;
     union {
-        fip_type_prim_enum_t prim;
+        fip_type_prim_e prim;
         fip_type_ptr_t ptr;
         fip_type_struct_t struct_t;
         fip_type_recursive_t recursive;
@@ -261,7 +261,7 @@ typedef struct {
 /// @typedef `fip_msg_symbol_request_t`
 /// @brief Struct representing the symbol request message
 typedef struct {
-    fip_msg_symbol_type_t type;
+    fip_msg_symbol_type_e type;
     union {
         fip_sig_fn_t fn;
     } sig;
@@ -272,7 +272,7 @@ typedef struct {
 typedef struct {
     bool found;
     char module_name[FIP_MAX_MODULE_NAME_LEN];
-    fip_msg_symbol_type_t type;
+    fip_msg_symbol_type_e type;
     union {
         fip_sig_fn_t fn;
     } sig;
@@ -319,7 +319,7 @@ typedef struct {
 /// @typedef `fip_msg_t`
 /// @brief Struct representing sent / recieved FIP messages
 typedef struct {
-    fip_msg_type_t type;
+    fip_msg_type_e type;
     union {
         fip_msg_connect_request_t con_req;
         fip_msg_symbol_request_t sym_req;
@@ -569,7 +569,7 @@ uint8_t fip_master_await_responses(        //
     char buffer[FIP_MSG_SIZE],             //
     fip_msg_t responses[FIP_MAX_SLAVES],   //
     uint32_t *response_count,              //
-    const fip_msg_type_t expected_msg_type //
+    const fip_msg_type_e expected_msg_type //
 );
 
 /// @function `fip_master_symbol_request`
@@ -1109,11 +1109,11 @@ void fip_decode_type(                //
     uint32_t *idx,                   //
     fip_type_t *type                 //
 ) {
-    type->type = (fip_type_enum_t)buffer[(*idx)++];
+    type->type = (fip_type_e)buffer[(*idx)++];
     type->is_mutable = (bool)buffer[(*idx)++];
     switch (type->type) {
         case FIP_TYPE_PRIMITIVE:
-            type->u.prim = (fip_type_prim_enum_t)buffer[(*idx)++];
+            type->u.prim = (fip_type_prim_e)buffer[(*idx)++];
             break;
         case FIP_TYPE_PTR:
             type->u.ptr.base_type = (fip_type_t *)malloc(sizeof(fip_type_t));
@@ -1174,7 +1174,7 @@ void fip_decode_sig_fn(              //
 void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
     // The first character in the buffer is the message type
     uint32_t idx = 0;
-    message->type = (fip_msg_type_t)buffer[idx++];
+    message->type = (fip_msg_type_e)buffer[idx++];
     switch (message->type) {
         case FIP_MSG_UNKNOWN:
             // Recieved unknown or faulty message
@@ -1190,7 +1190,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
                 FIP_MAX_MODULE_NAME_LEN);
             break;
         case FIP_MSG_SYMBOL_REQUEST:
-            message->u.sym_req.type = (fip_msg_symbol_type_t)buffer[idx++];
+            message->u.sym_req.type = (fip_msg_symbol_type_e)buffer[idx++];
             switch (message->u.sym_req.type) {
                 case FIP_SYM_UNKNOWN:
                     break;
@@ -1208,7 +1208,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             memcpy(message->u.sym_res.module_name, buffer + idx,
                 FIP_MAX_MODULE_NAME_LEN);
             idx += FIP_MAX_MODULE_NAME_LEN;
-            message->u.sym_res.type = (fip_msg_symbol_type_t)buffer[idx++];
+            message->u.sym_res.type = (fip_msg_symbol_type_e)buffer[idx++];
             switch (message->u.sym_res.type) {
                 case FIP_SYM_UNKNOWN:
                     break;
@@ -1275,7 +1275,7 @@ void fip_free_type(fip_type_t *type) {
 }
 
 void fip_free_msg(fip_msg_t *message) {
-    const fip_msg_type_t msg_type = message->type;
+    const fip_msg_type_e msg_type = message->type;
     message->type = FIP_MSG_UNKNOWN;
     switch (msg_type) {
         case FIP_MSG_UNKNOWN:
@@ -1974,7 +1974,7 @@ uint8_t fip_master_await_responses(        //
     char buffer[FIP_MSG_SIZE],             //
     fip_msg_t responses[FIP_MAX_SLAVES],   //
     uint32_t *response_count,              //
-    const fip_msg_type_t expected_msg_type //
+    const fip_msg_type_e expected_msg_type //
 ) {
     fip_print(0, FIP_INFO, "Awaiting Responses");
 
@@ -2301,7 +2301,7 @@ uint8_t fip_master_await_responses(        //
     char buffer[FIP_MSG_SIZE],             //
     fip_msg_t responses[FIP_MAX_SLAVES],   //
     uint32_t *response_count,              //
-    const fip_msg_type_t expected_msg_type //
+    const fip_msg_type_e expected_msg_type //
 ) {
 #define FIP_TIMEOUT 1.0
     fip_print(0, FIP_INFO, "Awaiting Responses");
