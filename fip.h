@@ -114,12 +114,11 @@ static void msleep(unsigned int ms) {
 #define FIP_MINOR 3
 #define FIP_PATCH 0
 
-#define FIP_TYPE_COUNT 12
 #define FIP_MAX_MODULE_NAME_LEN 16
 
 /// @typedef `fip_type_prim_e`
 /// @brief Enum of all possible primitive types supported by FIP
-typedef enum : uint8_t {
+enum {
     FIP_VOID = 0, // void
     FIP_U8,       // unsigned char
     FIP_U16,      // unsigned short
@@ -133,11 +132,12 @@ typedef enum : uint8_t {
     FIP_F64,      // double
     FIP_BOOL,     // bool (byte)
     FIP_STR,      // char*
-} fip_type_prim_e;
+};
+typedef uint8_t fip_type_prim_e;
 
 /// @typedef `fip_msg_type_e`
 /// @bfief Enum of all possible messages the FIP can handle
-typedef enum : uint8_t {
+enum {
     FIP_MSG_UNKNOWN = 0,     // Unknown message
     FIP_MSG_CONNECT_REQUEST, // Slave trying to connect to master
     FIP_MSG_SYMBOL_REQUEST,  // Master requesting symbol resolution
@@ -145,29 +145,32 @@ typedef enum : uint8_t {
     FIP_MSG_COMPILE_REQUEST, // Master requesting all slaves to compile
     FIP_MSG_OBJECT_RESPONSE, // Slave responding compilation with .o file
     FIP_MSG_KILL,            // Kill command comes last
-} fip_msg_type_e;
+};
+typedef uint8_t fip_msg_type_e;
 
 /// @typedef `fip_msg_symbol_type_e`
 /// @brief Enum of all possible symbol types
-typedef enum : uint8_t {
+enum {
     FIP_SYM_UNKNOWN = 0,
     FIP_SYM_FUNCTION,
     FIP_SYM_DATA,
     FIP_SYM_ENUM,
-} fip_msg_symbol_type_e;
+};
+typedef uint8_t fip_msg_symbol_type_e;
 
-/// @typedef `fip_log_level_t`
+/// @typedef `fip_log_level_e`
 /// @breif Enum of all possible log levels of FIP
-typedef enum : uint8_t {
+enum {
     FIP_NONE = 0,
     FIP_ERROR,
     FIP_WARN,
     FIP_INFO,
     FIP_DEBUG,
     FIP_TRACE,
-} fip_log_level_t;
+};
+typedef uint8_t fip_log_level_e;
 
-extern fip_log_level_t LOG_LEVEL;
+extern fip_log_level_e LOG_LEVEL;
 
 /*
  * ===============
@@ -221,13 +224,14 @@ typedef struct {
 
 /// @typedef `fip_type_e`
 /// @brief The enum containing all possible FIP types there are
-typedef enum {
+enum {
     FIP_TYPE_PRIMITIVE,
     FIP_TYPE_PTR,
     FIP_TYPE_STRUCT,
     FIP_TYPE_RECURSIVE,
     FIP_TYPE_ENUM,
-} fip_type_e;
+};
+typedef uint8_t fip_type_e;
 
 /// @typedef `fip_type_t`
 /// @brief The struct representing a type in FIP
@@ -379,7 +383,7 @@ typedef struct {
 /// @param `...` The variadic values to put into the formatted output
 void fip_print(                      //
     const uint32_t id,               //
-    const fip_log_level_t log_level, //
+    const fip_log_level_e log_level, //
     const char *format,              //
     ...                              //
 );
@@ -739,7 +743,7 @@ const char *fip_type_names[] = {
 
 void fip_print(                      //
     const uint32_t id,               //
-    const fip_log_level_t log_level, //
+    const fip_log_level_e log_level, //
     const char *format,              //
     ...                              //
 ) {

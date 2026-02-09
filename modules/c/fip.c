@@ -5,7 +5,7 @@
 #ifdef DEBUG_BUILD
 fip_log_level_t LOG_LEVEL = FIP_DEBUG;
 #else
-fip_log_level_t LOG_LEVEL = FIP_WARN;
+fip_log_level_e LOG_LEVEL = FIP_WARN;
 #endif
 
 #include <clang-c/Index.h>
@@ -1188,7 +1188,7 @@ int main(int argc, char *argv[]) {
     ID = (uint32_t)strtoul(id_str, &endptr, 10);
     if (argc == 3) {
         char *log_str = argv[2];
-        LOG_LEVEL = (fip_log_level_t)strtoul(log_str, &endptr, 10);
+        LOG_LEVEL = (fip_log_level_e)strtoul(log_str, &endptr, 10);
     }
     fip_print(ID, FIP_INFO, "starting...");
 
