@@ -3,7 +3,7 @@
 #include "fip.h"
 
 #ifdef DEBUG_BUILD
-fip_log_level_t LOG_LEVEL = FIP_DEBUG;
+fip_log_level_e LOG_LEVEL = FIP_DEBUG;
 #else
 fip_log_level_e LOG_LEVEL = FIP_WARN;
 #endif
