@@ -1,4 +1,4 @@
 [extern]
 headers = ["extern.h"]
 sources = ["extern.h"]
-command = ["clang", "-g", "__SOURCES__", "-o", "__OUTPUT__"]
+command = ["clang", "-g", "-x", "c", "-c", "__SOURCES__", "-o", "__OUTPUT__"]
