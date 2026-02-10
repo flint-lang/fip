@@ -437,14 +437,14 @@ bool parse_toml_file(toml_result_t toml) {
 #endif
                     cfg->command[cmd_idx] = (char *)malloc(output_len);
                     char *insert_ptr = cfg->command[cmd_idx];
-                    memcpy(cfg->command[cmd_idx], cache_dir, cache_dir_len);
+                    memcpy(insert_ptr, cache_dir, cache_dir_len);
                     insert_ptr += cache_dir_len;
                     fip_create_hash(insert_ptr, cfg->headers[0]);
                     memcpy(cfg->output, insert_ptr, FIP_PATH_SIZE);
                     insert_ptr += FIP_PATH_SIZE;
                     memcpy(insert_ptr, file_ext, ext_len);
                     cfg->command[cmd_idx][output_len - 1] = '\0';
-                    cfg->output[FIP_PATH_SIZE - 1] = '\0';
+                    cfg->output[FIP_PATH_SIZE] = '\0';
                     command_output_substituted = true;
                 } else {
                     cfg->command[cmd_idx] = (char *)malloc((size_t)slen + 1);
