@@ -2360,6 +2360,7 @@ fip_sig_list_t *fip_master_tag_request( //
 }
 
 void fip_master_cleanup() {
+    fip_print_slave_streams();
     for (uint32_t i = 0; i < master_state.slave_count; i++) {
         if (master_state.slave_stdin[i]) {
             fclose(master_state.slave_stdin[i]);
@@ -2368,6 +2369,10 @@ void fip_master_cleanup() {
         if (master_state.slave_stdout[i]) {
             fclose(master_state.slave_stdout[i]);
             master_state.slave_stdout[i] = NULL;
+        }
+        if (master_state.slave_stderr[i]) {
+            fclose(master_state.slave_stderr[i]);
+            master_state.slave_stderr[i] = NULL;
         }
     }
     master_state.slave_count = 0;

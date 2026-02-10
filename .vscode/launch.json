@@ -8,7 +8,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "C",
-            "program": "${workspaceFolder}/modules/c/example_master",
+            "program": "${workspaceFolder}/zig-out/bin/example_master",
             "args": [],
             "cwd": "${workspaceFolder}"
         }
