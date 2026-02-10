@@ -458,7 +458,7 @@ bool parse_toml_file(toml_result_t toml) {
             }
         }
 
-        if (!command_sources_substituted) {
+        if (command_present && !command_sources_substituted) {
             fip_print(ID, FIP_ERROR,
                 "Missing substitute '__SOURCES__' in 'command' in table '%s'",
                 cfg->tag);
@@ -470,7 +470,7 @@ bool parse_toml_file(toml_result_t toml) {
             }
             goto fail;
         }
-        if (!command_output_substituted) {
+        if (command_present && !command_output_substituted) {
             fip_print(ID, FIP_ERROR,
                 "Missing substitute '__OUTPUT__' in 'command' in table '%s'",
                 cfg->tag);
