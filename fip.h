@@ -1110,6 +1110,48 @@ void fip_print_msg(uint32_t id, const fip_msg_t *message) {
             );
             fip_print(id, FIP_DEBUG, "}");
             break;
+        case FIP_MSG_TAG_REQUEST:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_TAG_REQUEST: {");
+            fip_print(id, FIP_DEBUG, "  .tag: %s", message->u.tag_req.tag);
+            fip_print(id, FIP_DEBUG, "}");
+            break;
+        case FIP_MSG_TAG_PRESENT_RESPONSE:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_TAG_PRESENT_RESPONSE: {");
+            fip_print(id, FIP_DEBUG, "  .is_present: %d", //
+                message->u.tag_pres_res.is_present        //
+            );
+            fip_print(id, FIP_DEBUG, "}");
+            break;
+        case FIP_MSG_TAG_SYMBOL_RESPONSE:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_TAG_SYMBOL_RESPONSE: {");
+            fip_print(id, FIP_DEBUG, "  .is_empty: %d", //
+                message->u.tag_sym_res.is_empty         //
+            );
+            if (!message->u.tag_sym_res.is_empty) {
+                switch (message->u.tag_sym_res.type) {
+                    case FIP_SYM_UNKNOWN:
+                        fip_print(id, FIP_DEBUG, "  .type: UNKNOWN");
+                        break;
+                    case FIP_SYM_FUNCTION:
+                        fip_print(id, FIP_DEBUG, "  .type: FUNCTION");
+                        fip_print_sig_fn(id, &message->u.tag_sym_res.sig.fn);
+                        break;
+                    case FIP_SYM_DATA:
+                        fip_print(id, FIP_DEBUG, "  .type: DATA");
+                        fip_print_sig_data(                      //
+                            id, &message->u.tag_sym_res.sig.data //
+                        );
+                        break;
+                    case FIP_SYM_ENUM:
+                        fip_print(id, FIP_DEBUG, "  .type: ENUM");
+                        fip_print_sig_enum(                        //
+                            id, &message->u.tag_sym_res.sig.enum_t //
+                        );
+                        break;
+                }
+            }
+            fip_print(id, FIP_DEBUG, "}");
+            break;
         case FIP_MSG_KILL:
             fip_print(id, FIP_DEBUG, "FIP_MSG_KILL: {");
             switch (message->u.kill.reason) {
