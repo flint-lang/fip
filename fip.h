@@ -1509,8 +1509,64 @@ void fip_decode_sig_fn(              //
     }
 }
 
+void fip_decode_sig_data(            //
+    const char buffer[FIP_MSG_SIZE], //
+    uint32_t *idx,                   //
+    fip_sig_data_t *sig              //
+) {
+    memcpy(sig->name, buffer + *idx, sizeof(sig->name));
+    *idx += sizeof(sig->name);
+    sig->value_count = buffer[(*idx)++];
+    // We store all value names first, then all value types
+    sig->value_names = (char **)malloc(sizeof(char *) * sig->value_count);
+    for (uint8_t i = 0; i < sig->value_count; i++) {
+        const uint8_t name_len = buffer[(*idx)++];
+        sig->value_names[i] = (char *)malloc(name_len + 1);
+        memcpy(sig->value_names[i], buffer + *idx, name_len);
+        sig->value_names[i][name_len] = '\0';
+        *idx += name_len;
+    }
+    sig->value_types = (fip_type_t *)malloc(  //
+        sizeof(fip_type_t) * sig->value_count //
+    );
+    for (uint8_t i = 0; i < sig->value_count; i++) {
+        fip_decode_type(buffer, idx, &sig->value_types[i]);
+    }
+}
+
+void fip_decode_sig_enum(            //
+    const char buffer[FIP_MSG_SIZE], //
+    uint32_t *idx,                   //
+    fip_sig_enum_t *sig              //
+) {
+    memcpy(sig->name, buffer + *idx, sizeof(sig->name));
+    *idx += sizeof(sig->name);
+    sig->type = buffer[(*idx)++];
+    sig->value_count = buffer[(*idx)++];
+    // For enums we first stored all tags to reduce padding needs
+    sig->tags = (char **)malloc(sizeof(char *) * sig->value_count);
+    for (uint8_t i = 0; i < sig->value_count; i++) {
+        const uint8_t tag_len = buffer[(*idx)++];
+        sig->tags[i] = (char *)malloc(tag_len);
+        memcpy(sig->tags[i], buffer + *idx, tag_len);
+        sig->tags[i][tag_len] = '\0';
+        *idx += tag_len;
+    }
+    // Then we pad the index to 8 for all the size_t number containers
+    while (*idx % 8 != 0) {
+        *idx += 1;
+    }
+    // And then we store all the values one after another
+    const size_t *buffer_st = FIP_ALIGNCAST(size_t, buffer);
+    sig->values = (size_t *)malloc(sizeof(size_t) * sig->value_count);
+    for (uint8_t i = 0; i < sig->value_count; i++) {
+        sig->values[i] = buffer_st[i];
+        *idx += sizeof(size_t);
+    }
+}
+
 void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
-    // The first character in the buffer is the message type
+    *message = (fip_msg_t){0};
     uint32_t idx = 0;
     message->type = (fip_msg_type_e)buffer[idx++];
     switch (message->type) {
@@ -1553,11 +1609,19 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
                 case FIP_SYM_UNKNOWN:
                     break;
                 case FIP_SYM_FUNCTION:
-                    fip_decode_sig_fn(buffer, &idx, &message->u.sym_res.sig.fn);
+                    fip_decode_sig_fn(                           //
+                        buffer, &idx, &message->u.sym_res.sig.fn //
+                    );
                     break;
                 case FIP_SYM_DATA:
+                    fip_decode_sig_data(                           //
+                        buffer, &idx, &message->u.sym_res.sig.data //
+                    );
                     break;
                 case FIP_SYM_ENUM:
+                    fip_decode_sig_enum(                             //
+                        buffer, &idx, &message->u.sym_res.sig.enum_t //
+                    );
                     break;
             }
             break;
@@ -1588,6 +1652,45 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             memcpy(message->u.obj_res.paths, buffer + idx, offset);
             break;
         }
+        case FIP_MSG_TAG_REQUEST: {
+            const uint8_t tag_len = buffer[idx++];
+            memcpy(message->u.tag_req.tag, buffer + idx, tag_len);
+            idx += tag_len;
+            break;
+        }
+        case FIP_MSG_TAG_PRESENT_RESPONSE:
+            message->u.tag_pres_res.is_present = buffer[idx++];
+            break;
+        case FIP_MSG_TAG_SYMBOL_RESPONSE:
+            message->u.tag_sym_res.is_empty = buffer[idx++];
+            if (!message->u.tag_sym_res.is_empty) {
+                // Only decode the content if it's not empty, to make the
+                // message to send smaller in the empty case
+                message->u.tag_sym_res.type = buffer[idx++];
+                switch (message->u.tag_sym_res.type) {
+                    case FIP_SYM_UNKNOWN:
+                        break;
+                    case FIP_SYM_FUNCTION:
+                        fip_decode_sig_fn(                 //
+                            buffer, &idx,                  //
+                            &message->u.tag_sym_res.sig.fn //
+                        );
+                        break;
+                    case FIP_SYM_DATA:
+                        fip_decode_sig_data(                 //
+                            buffer, &idx,                    //
+                            &message->u.tag_sym_res.sig.data //
+                        );
+                        break;
+                    case FIP_SYM_ENUM:
+                        fip_decode_sig_enum(                   //
+                            buffer, &idx,                      //
+                            &message->u.tag_sym_res.sig.enum_t //
+                        );
+                        break;
+                }
+            }
+            break;
         case FIP_MSG_KILL:
             // The kill message just adds why the kill happens
             message->u.kill.reason = (fip_msg_kill_reason_e)buffer[idx++];
