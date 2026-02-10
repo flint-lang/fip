@@ -86,28 +86,35 @@ int main() {
     // Create a single message which will be re-used for all messages
     fip_msg_t msg = {0};
 
-    // Broadcast the InitWindow function of raylib
+    // Send the tag request message to all connected interop modules
+    // msg.type = FIP_MSG_TAG_REQUEST;
+    // strcpy(msg.u.tag_req.tag, "test");
+    // fip_sig_list_t *sig_list = fip_master_tag_request(msg_buf, &msg);
+    // fip_print(0, FIP_DEBUG, "sig_list(\"test\").count = %lu",
+    // sig_list->count);
+
+    // Broadcast the add function
     // extern def InitWindow(mut i32 width, mut i32 height, str title);
     msg.type = FIP_MSG_SYMBOL_REQUEST;
     msg.u.sym_req.type = FIP_SYM_FUNCTION;
-    strcpy(msg.u.sym_req.sig.fn.name, "InitWindow");
+    strcpy(msg.u.sym_req.sig.fn.name, "add");
     msg.u.sym_req.sig.fn.rets_len = 0;
     msg.u.sym_req.sig.fn.rets = NULL;
 
-    msg.u.sym_req.sig.fn.args_len = 3;
-    msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_type_t) * 3);
+    msg.u.sym_req.sig.fn.args_len = 2;
+    msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_type_t) * 2);
 
-    msg.u.sym_req.sig.fn.args[0].type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[0].type = FIP_TYPE_PTR;
     msg.u.sym_req.sig.fn.args[0].is_mutable = true;
-    msg.u.sym_req.sig.fn.args[0].u.prim = FIP_I32;
+    msg.u.sym_req.sig.fn.args[0].u.ptr.base_type = malloc(sizeof(fip_type_t));
+    msg.u.sym_req.sig.fn.args[0].u.ptr.base_type->type = FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[0].u.ptr.base_type->is_mutable =
+        FIP_TYPE_PRIMITIVE;
+    msg.u.sym_req.sig.fn.args[0].u.ptr.base_type->u.prim = FIP_I32;
 
     msg.u.sym_req.sig.fn.args[1].type = FIP_TYPE_PRIMITIVE;
     msg.u.sym_req.sig.fn.args[1].is_mutable = true;
     msg.u.sym_req.sig.fn.args[1].u.prim = FIP_I32;
-
-    msg.u.sym_req.sig.fn.args[2].type = FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.args[2].is_mutable = false;
-    msg.u.sym_req.sig.fn.args[2].u.prim = FIP_STR;
 
     if (!fip_master_symbol_request(msg_buf, &msg)) {
         fip_print(0, FIP_INFO, "Goto kill");

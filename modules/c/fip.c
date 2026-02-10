@@ -59,23 +59,48 @@ const char *c_type_names[] = {
 };
 
 typedef struct {
-    bool needed;
     char source_file_path[512];
     int line_number;
     fip_msg_symbol_type_e type;
     union {
         fip_sig_fn_t fn;
+        fip_sig_data_t data;
         fip_sig_enum_t enum_t;
     } signature;
 } fip_c_symbol_t;
 
 typedef struct {
-    char compiler[128];
-    uint32_t sources_len;
-    char **sources;
-    uint32_t compile_flags_len;
-    char **compile_flags;
+    char tag[128];
+    uint32_t headers_len;
+    char **headers;
+    uint32_t command_len;
+    char **command;
+    char output[FIP_PATH_SIZE + 1];
 } fip_module_config_t;
+
+typedef struct {
+    size_t count;
+    fip_module_config_t *configs;
+} fip_modules_config_t;
+
+#define MAX_SYMBOLS 1000
+typedef struct {
+    /// @var `needed`
+    /// @brief Whether this whole collection is needed, for example when the tag
+    /// is non-empty and we write `use Fip.tagname` in Flint then the whole
+    /// module is requested to be compiled. Or, if the tag is empty and a single
+    /// (or more) symbol(s) of that module are used then the whole module is
+    /// compiled and returned.
+    bool needed;
+    char tag[128];
+    size_t symbol_count;
+    fip_c_symbol_t symbols[MAX_SYMBOLS];
+} fip_c_symbol_collection_t;
+
+typedef struct {
+    size_t count;
+    fip_c_symbol_collection_t *collection;
+} fip_c_symbol_list_t;
 
 typedef struct {
     fip_type_t *fields;
@@ -161,78 +186,354 @@ int stack_find_equal(cx_type_stack *s, CXType canonical) {
  * ==============================================
  */
 
-#define MAX_SYMBOLS 1000
 #define MODULE_NAME "fip-c"
 
-fip_c_symbol_t symbols[MAX_SYMBOLS]; // Simple array for now
-uint32_t symbol_count = 0;
 uint32_t ID;
-fip_module_config_t CONFIG;
+fip_c_symbol_list_t symbol_list;
+fip_c_symbol_collection_t *curr_coll;
+fip_modules_config_t CONFIGS;
 cx_type_stack stack;
 
 bool parse_toml_file(toml_result_t toml) {
-    // === COMPILER ===
-    toml_datum_t compiler_d = toml_seek(toml.toptab, "compiler");
-    if (compiler_d.type != TOML_STRING) {
-        fip_print(ID, FIP_ERROR, "Missing 'compiler' field");
+    // Validate top-level is a table (toml.toptab)
+    if (toml.toptab.type != TOML_TABLE) {
+        fip_print(ID, FIP_ERROR, "TOML root is not a table");
         return false;
-    }
-    const int compiler_len = compiler_d.u.str.len;
-    const char *compiler_ptr = compiler_d.u.str.ptr;
-    memcpy(CONFIG.compiler, compiler_ptr, compiler_len);
-
-    // === SOURCES ===
-    toml_datum_t sources_d = toml_seek(toml.toptab, "sources");
-    if (sources_d.type != TOML_ARRAY) {
-        fip_print(ID, FIP_ERROR, "Missing 'sources' field");
-        return false;
-    }
-    int32_t arr_len = sources_d.u.arr.size;
-    toml_datum_t *sources_elems_d = sources_d.u.arr.elem;
-    CONFIG.sources = (char **)malloc(sizeof(char *) * arr_len);
-    CONFIG.sources_len = arr_len;
-    for (int32_t i = 0; i < arr_len; i++) {
-        if (sources_elems_d[i].type != TOML_STRING) {
-            fip_print(ID, FIP_ERROR,
-                "'sources' does contain a non-string value");
-            return false;
-        }
-        int32_t strlen = sources_elems_d[i].u.str.len;
-        CONFIG.sources[i] = (char *)malloc(strlen + 1);
-        memcpy(                           //
-            CONFIG.sources[i],            //
-            sources_elems_d[i].u.str.ptr, //
-            strlen                        //
-        );
-        CONFIG.sources[i][strlen] = '\0';
     }
 
-    // === COMPILE_FLAGS ===
-    toml_datum_t compile_flags_d = toml_seek(toml.toptab, "compile_flags");
-    if (compile_flags_d.type != TOML_ARRAY) {
-        fip_print(ID, FIP_ERROR, "Missing 'compile_flags' field");
+    // First pass: count top-level tables (each is a module config)
+    const int32_t top_count = toml.toptab.u.tab.size;
+    if (top_count <= 0) {
+        fip_print(ID, FIP_ERROR, "No top-level entries in TOML");
         return false;
     }
-    arr_len = compile_flags_d.u.arr.size;
-    toml_datum_t *compile_flags_elems_d = compile_flags_d.u.arr.elem;
-    CONFIG.compile_flags = (char **)malloc(sizeof(char *) * arr_len);
-    CONFIG.compile_flags_len = arr_len;
-    for (int32_t i = 0; i < arr_len; i++) {
-        if (compile_flags_elems_d[i].type != TOML_STRING) {
-            fip_print(ID, FIP_ERROR,
-                "'compile_flags' does contain a non-string value");
+
+    for (int32_t i = 0; i < top_count; ++i) {
+        toml_datum_t v = toml.toptab.u.tab.value[i];
+        if (v.type != TOML_TABLE) {
+            fip_print(ID, FIP_ERROR, "Incorrect top-level entry in TOML");
             return false;
         }
-        int32_t strlen = compile_flags_elems_d[i].u.str.len;
-        CONFIG.compile_flags[i] = (char *)malloc(strlen + 1);
-        memcpy(                                 //
-            CONFIG.compile_flags[i],            //
-            compile_flags_elems_d[i].u.str.ptr, //
-            strlen                              //
-        );
-        CONFIG.compile_flags[i][strlen] = '\0';
     }
+
+    // Allocate CONFIGS
+    CONFIGS.count = (size_t)top_count;
+    CONFIGS.configs = (fip_module_config_t *)malloc( //
+        sizeof(fip_module_config_t) * CONFIGS.count  //
+    );
+    memset(CONFIGS.configs, 0, sizeof(fip_module_config_t) * CONFIGS.count);
+
+    // Second pass: fill CONFIGS
+    size_t cfg_idx = 0;
+    for (int32_t i = 0; i < top_count; ++i) {
+        toml_datum_t v = toml.toptab.u.tab.value[i];
+        const char *keyname = toml.toptab.u.tab.key[i];
+        int keylen = toml.toptab.u.tab.len[i];
+
+        fip_module_config_t *cfg = &CONFIGS.configs[cfg_idx];
+        memset(cfg, 0, sizeof(fip_module_config_t));
+        // copy tag (may be empty)
+        int copy_len = keylen < (int)sizeof(cfg->tag) - 1
+            ? keylen
+            : (int)sizeof(cfg->tag) - 1;
+        if (copy_len > 0) {
+            memcpy(cfg->tag, keyname, (size_t)copy_len);
+        }
+        cfg->tag[copy_len] = '\0';
+
+        // module table datum, this is the table itself
+        toml_datum_t module = v;
+
+        // headers (required, array of strings)
+        toml_datum_t headers_d = toml_get(module, "headers");
+        if (headers_d.type != TOML_ARRAY) {
+            fip_print(ID, FIP_ERROR,
+                "Missing or invalid 'headers' in table '%s'", cfg->tag);
+            goto fail;
+        }
+        size_t headers_len = headers_d.u.arr.size;
+        if (headers_len < 0) {
+            headers_len = 0;
+        }
+        cfg->headers = (char **)malloc(sizeof(char *) * (size_t)headers_len);
+        cfg->headers_len = (uint32_t)headers_len;
+        toml_datum_t *header_elems = headers_d.u.arr.elem;
+        for (size_t j = 0; j < headers_len; ++j) {
+            if (header_elems[j].type != TOML_STRING) {
+                fip_print(ID, FIP_ERROR,
+                    "Non-string in 'headers' of table '%s'", cfg->tag);
+                // free allocated so far for this cfg
+                for (size_t k = 0; k < j; ++k) {
+                    free(cfg->headers[k]);
+                }
+                free(cfg->headers);
+                cfg->headers = NULL;
+                cfg->headers_len = 0;
+                goto fail;
+            }
+            int32_t slen = header_elems[j].u.str.len;
+            cfg->headers[j] = (char *)malloc((size_t)slen + 1);
+            memcpy(cfg->headers[j], header_elems[j].u.str.ptr, (size_t)slen);
+            cfg->headers[j][slen] = '\0';
+        }
+
+        // sources (optional, array of strings)
+        toml_datum_t sources_d = toml_get(module, "sources");
+        size_t sources_len = 0;
+        char **sources = NULL;
+        const bool sources_present = sources_d.type == TOML_ARRAY;
+        if (sources_present) {
+            sources_len = sources_d.u.arr.size;
+            if (sources_len < 0) {
+                sources_len = 0;
+            }
+            sources = (char **)malloc(               //
+                sizeof(char *) * (size_t)sources_len //
+            );
+            toml_datum_t *elems = sources_d.u.arr.elem;
+            for (size_t j = 0; j < sources_len; ++j) {
+                if (elems[j].type != TOML_STRING) {
+                    fip_print(ID, FIP_ERROR,
+                        "Non-string in 'sources' of table '%s'", cfg->tag);
+                    // free allocated so far for this cfg
+                    for (size_t k = 0; k < j; ++k) {
+                        free(sources[k]);
+                    }
+                    free(sources);
+                    sources = NULL;
+                    sources_len = 0;
+                    goto fail;
+                }
+                int32_t slen = elems[j].u.str.len;
+                sources[j] = (char *)malloc((size_t)slen + 1);
+                memcpy(sources[j], elems[j].u.str.ptr, (size_t)slen);
+                sources[j][slen] = '\0';
+            }
+        }
+
+        // command (optional, array of strings)
+        // Fails if command is present but no sources are present
+        toml_datum_t command_d = toml_get(module, "command");
+        const bool command_present = command_d.type == TOML_ARRAY;
+        bool command_sources_substituted = false;
+        bool command_output_substituted = false;
+        if (command_present) {
+            if (!sources_present || sources_len == 0) {
+                fip_print(ID, FIP_ERROR,
+                    "Missing, invalid or empty 'sources' in table '%s'",
+                    cfg->tag);
+                goto fail;
+            }
+            size_t command_len = command_d.u.arr.size;
+            if (command_len < 0) {
+                command_len = 0;
+            }
+            // The command needs to be the size of the actual command strings +
+            // the number of sources - 1 (since the `__SOURCES__` string is
+            // substituted with the sources)
+            command_len += sources_len - 1;
+            cfg->command = (char **)malloc(          //
+                sizeof(char *) * (size_t)command_len //
+            );
+            cfg->command_len = (uint32_t)command_len;
+            toml_datum_t *elems = command_d.u.arr.elem;
+            for (size_t j = 0; j < command_len - sources_len + 1; ++j) {
+                size_t cmd_idx = command_sources_substituted //
+                    ? j + sources_len - 1                    //
+                    : j;
+                if (elems[j].type != TOML_STRING) {
+                    fip_print(ID, FIP_ERROR,
+                        "Non-string in 'command' of table '%s'", cfg->tag);
+                    // Clean up all command string so far
+                    for (size_t k = 0; k < cmd_idx; ++k) {
+                        free(cfg->command[k]);
+                    }
+                    free(cfg->command);
+                    cfg->command = NULL;
+                    cfg->command_len = 0;
+                    for (size_t k = 0; k < sources_len; ++k) {
+                        free(sources[k]);
+                    }
+                    free(sources);
+                    sources = NULL;
+                    sources_len = 0;
+                    goto fail;
+                }
+                int32_t slen = elems[j].u.str.len;
+                if (strncmp(                                                  //
+                        elems[j].u.str.ptr, "__SOURCES__", (size_t)slen) == 0 //
+                ) {
+                    if (command_sources_substituted) {
+                        // Substituting the sources twice is not allowed
+                        fip_print(ID, FIP_ERROR,
+                            "Substituting '__SOURCES__' twice in 'command' in table '%s'",
+                            cfg->tag);
+                        // Clean up all command string so far
+                        for (size_t k = 0; k < cmd_idx; ++k) {
+                            free(cfg->command[k]);
+                        }
+                        free(cfg->command);
+                        cfg->command = NULL;
+                        cfg->command_len = 0;
+                        for (size_t k = 0; k < sources_len; ++k) {
+                            free(sources[k]);
+                        }
+                        free(sources);
+                        goto fail;
+                    }
+                    // Substitute the sources' content into the command by
+                    // simply copying over the pointer shallowly and then just
+                    // freeing the `sources` itself instead of freeing the
+                    // strings themselves.
+                    assert(cmd_idx == j);
+                    for (size_t k = 0; k < sources_len; k++) {
+                        cfg->command[j + k] = sources[k];
+                    }
+                    free(sources);
+                    sources = NULL;
+                    command_sources_substituted = true;
+                } else if (strncmp(elems[j].u.str.ptr, "__OUTPUT__", //
+                               (size_t)slen) == 0                    //
+                ) {
+                    if (command_output_substituted) {
+                        // Substituting the sources twice is not allowed
+                        fip_print(ID, FIP_ERROR,
+                            "Substituting '__OUTPUT__' twice in 'command' in table '%s'",
+                            cfg->tag);
+                        // Clean up all command string so far
+                        for (size_t k = 0; k < j; ++k) {
+                            free(cfg->command[k]);
+                        }
+                        free(cfg->command);
+                        cfg->command = NULL;
+                        cfg->command_len = 0;
+                        for (size_t k = 0; k < sources_len; ++k) {
+                            free(sources[k]);
+                        }
+                        free(sources);
+                        goto fail;
+                    }
+                    // Substitution of the `__OUTPUT__` string works by hashing
+                    // the first header for now
+                    // TODO: Implement a more sophisticated hashing
+                    const char *cache_dir = ".fip/cache/";
+                    const size_t cache_dir_len = 11;
+#ifdef __WIN32__
+                    const char *file_ext = ".obj";
+                    const size_t ext_len = 4;
+                    const size_t output_len = //
+                        cache_dir_len         // The length of the cache dir
+                        + FIP_PATH_SIZE       // The length of the hash itself
+                        + ext_len             // '.obj'
+                        + 1;                  // Zero-terminator
+#else
+                    const char *file_ext = ".o";
+                    const size_t ext_len = 2;
+                    const size_t output_len = //
+                        cache_dir_len         // The length of the cache dir
+                        + FIP_PATH_SIZE       // The length of the hash itself
+                        + ext_len             // '.o'
+                        + 1;                  // Zero-terminator
+#endif
+                    cfg->command[cmd_idx] = (char *)malloc(output_len);
+                    char *insert_ptr = cfg->command[cmd_idx];
+                    memcpy(cfg->command[cmd_idx], cache_dir, cache_dir_len);
+                    insert_ptr += cache_dir_len;
+                    fip_create_hash(insert_ptr, cfg->headers[0]);
+                    memcpy(cfg->output, insert_ptr, FIP_PATH_SIZE);
+                    insert_ptr += FIP_PATH_SIZE;
+                    memcpy(insert_ptr, file_ext, ext_len);
+                    cfg->command[cmd_idx][output_len - 1] = '\0';
+                    cfg->output[FIP_PATH_SIZE - 1] = '\0';
+                    command_output_substituted = true;
+                } else {
+                    cfg->command[cmd_idx] = (char *)malloc((size_t)slen + 1);
+                    memcpy(                    //
+                        cfg->command[cmd_idx], //
+                        elems[j].u.str.ptr,    //
+                        (size_t)slen           //
+                    );
+                    cfg->command[cmd_idx][slen] = '\0';
+                }
+            }
+        }
+
+        if (!command_sources_substituted) {
+            fip_print(ID, FIP_ERROR,
+                "Missing substitute '__SOURCES__' in 'command' in table '%s'",
+                cfg->tag);
+            if (sources_present) {
+                for (size_t j = 0; j < sources_len; ++j) {
+                    free(sources[j]);
+                }
+                free(sources);
+            }
+            goto fail;
+        }
+        if (!command_output_substituted) {
+            fip_print(ID, FIP_ERROR,
+                "Missing substitute '__OUTPUT__' in 'command' in table '%s'",
+                cfg->tag);
+            if (sources_present) {
+                for (size_t j = 0; j < sources_len; ++j) {
+                    free(sources[j]);
+                }
+                free(sources);
+            }
+            goto fail;
+        }
+
+        // Check if 'sources' are present but 'command' is not. In this case we
+        // need to free the 'sources' manually here since otherwise they would
+        // leak since nothin consumed them
+        if (sources_present && !command_present) {
+            fip_print(ID, FIP_ERROR,
+                "Missing or invalid 'command' in table '%s'", cfg->tag);
+            for (size_t j = 0; j < sources_len; ++j) {
+                free(sources[j]);
+            }
+            free(sources);
+            goto fail;
+        }
+
+        // finished filling this cfg
+        cfg_idx++;
+    }
+
+    // Success: cfg_idx should equal CONFIGS.count
+    if (cfg_idx != CONFIGS.count) {
+        // Shouldn't happen; defensive handling
+        fip_print(ID, FIP_WARN, "Parsed %zu module tables but expected %zu",
+            cfg_idx, CONFIGS.count);
+        CONFIGS.count = cfg_idx;
+    }
+
     return true;
+
+// On error: free everything allocated in CONFIGS
+fail:
+    for (size_t i = 0; i < CONFIGS.count; ++i) {
+        fip_module_config_t *c = &CONFIGS.configs[i];
+        if (c->headers) {
+            for (uint32_t j = 0; j < c->headers_len; ++j) {
+                free(c->headers[j]);
+            }
+            free(c->headers);
+            c->headers = NULL;
+            c->headers_len = 0;
+        }
+        if (c->command) {
+            for (uint32_t j = 0; j < c->command_len; ++j)
+                free(c->command[j]);
+            free(c->command);
+            c->command = NULL;
+            c->command_len = 0;
+        }
+    }
+    free(CONFIGS.configs);
+    CONFIGS.configs = NULL;
+    CONFIGS.count = 0;
+    return false;
 }
 
 /*
@@ -793,86 +1094,94 @@ enum CXChildVisitResult visit_ast_node( //
     }
 
     enum CXCursorKind kind = clang_getCursorKind(cursor);
-
-    // We're looking for function definitions
-    if (kind == CXCursor_FunctionDecl) {
-        // Get function name first to check if it's main
-        CXString name = clang_getCursorSpelling(cursor);
-        const char *name_cstr = clang_getCString(name);
-        fip_print(ID, FIP_TRACE, "Visit AST Node FunctionDecl: %s", name_cstr);
-        // Skip main function
-        if (strcmp(name_cstr, "main") == 0) {
+    switch (kind) {
+        default:
+            return CXChildVisit_Recurse;
+        case CXCursor_FunctionDecl: {
+            // Get function name first to check if it's main
+            CXString name = clang_getCursorSpelling(cursor);
+            const char *name_cstr = clang_getCString(name);
+            fip_print(ID, FIP_TRACE, "Visit AST Node FunctionDecl: %s",
+                name_cstr);
+            // Skip main function
+            if (strcmp(name_cstr, "main") == 0) {
+                clang_disposeString(name);
+                return CXChildVisit_Continue;
+            }
             clang_disposeString(name);
-            return CXChildVisit_Continue;
-        }
-        clang_disposeString(name);
 
-        // Check if function has external linkage
-        enum CXLinkageKind linkage = clang_getCursorLinkage(cursor);
-        if (linkage != CXLinkage_External) {
-            fip_print(ID, FIP_TRACE, "Has no external linkage");
-            return CXChildVisit_Continue;
-        }
+            // Check if function has external linkage
+            enum CXLinkageKind linkage = clang_getCursorLinkage(cursor);
+            if (linkage != CXLinkage_External) {
+                fip_print(ID, FIP_TRACE, "Has no external linkage");
+                return CXChildVisit_Continue;
+            }
 
-        if (symbol_count >= MAX_SYMBOLS) {
-            fip_print(                                                  //
-                ID, FIP_WARN,                                           //
-                "Maximum symbols reached, skipping remaining functions" //
+            if (curr_coll->symbol_count >= MAX_SYMBOLS) {
+                fip_print(                                                  //
+                    ID, FIP_WARN,                                           //
+                    "Maximum symbols reached, skipping remaining functions" //
+                );
+                return CXChildVisit_Break;
+            }
+
+            // Extract function information
+            fip_c_symbol_t symbol = {0};
+            strncpy(                                //
+                symbol.source_file_path, file_path, //
+                sizeof(symbol.source_file_path) - 1 //
             );
-            return CXChildVisit_Break;
+            symbol.line_number = (int)line;
+            symbol.type = FIP_SYM_FUNCTION;
+
+            if (extract_function_signature(cursor, &symbol.signature.fn)) {
+                curr_coll->symbols[curr_coll->symbol_count] = symbol;
+
+                fip_print(                                                  //
+                    ID, FIP_INFO, "Found extern function: '%s' at line %d", //
+                    symbol.signature.fn.name, symbol.line_number            //
+                );
+                fip_print_sig_fn(ID, &symbol.signature.fn);
+
+                curr_coll->symbol_count++;
+            }
+            break;
         }
+        case CXCursor_EnumDecl: {
+            if (!clang_isCursorDefinition(cursor)) {
+                return CXChildVisit_Continue;
+            }
 
-        // Extract function information
-        fip_c_symbol_t symbol = {0};
-        strncpy(symbol.source_file_path, file_path,
-            sizeof(symbol.source_file_path) - 1);
-        symbol.needed = false;
-        symbol.line_number = (int)line;
-        symbol.type = FIP_SYM_FUNCTION;
+            if (curr_coll->symbol_count >= MAX_SYMBOLS) {
+                fip_print(                                              //
+                    ID, FIP_WARN,                                       //
+                    "Maximum symbols reached, skipping remaining enums" //
+                );
+                return CXChildVisit_Break;
+            }
 
-        if (extract_function_signature(cursor, &symbol.signature.fn)) {
-            symbols[symbol_count] = symbol;
-
-            fip_print(                                                  //
-                ID, FIP_INFO, "Found extern function: '%s' at line %d", //
-                symbol.signature.fn.name, symbol.line_number            //
+            // Extract enum information
+            fip_c_symbol_t symbol = {0};
+            strncpy(                                //
+                symbol.source_file_path, file_path, //
+                sizeof(symbol.source_file_path) - 1 //
             );
-            fip_print_sig_fn(ID, &symbol.signature.fn);
+            symbol.line_number = (int)line;
+            symbol.type = FIP_SYM_ENUM;
 
-            symbol_count++;
-        }
-    } else if (kind == CXCursor_EnumDecl) {
-        if (!clang_isCursorDefinition(cursor)) {
-            return CXChildVisit_Continue;
-        }
+            if (extract_enum_signature(cursor, &symbol.signature.enum_t)) {
+                curr_coll->symbols[curr_coll->symbol_count] = symbol;
 
-        if (symbol_count >= MAX_SYMBOLS) {
-            fip_print(                                              //
-                ID, FIP_WARN,                                       //
-                "Maximum symbols reached, skipping remaining enums" //
-            );
-            return CXChildVisit_Break;
-        }
+                fip_print(                                           //
+                    ID, FIP_INFO, "Found enum: '%s' at line %d",     //
+                    symbol.signature.enum_t.name, symbol.line_number //
+                );
+                // fip_print_sig_enum(ID, &symbol.signature.enum_t); //
+                // Uncomment if print function exists
 
-        // Extract enum information
-        fip_c_symbol_t symbol = {0};
-        strncpy(symbol.source_file_path, file_path,
-            sizeof(symbol.source_file_path) - 1);
-        symbol.needed = false;
-        symbol.line_number = (int)line;
-        symbol.type = FIP_SYM_ENUM;
-
-        if (extract_enum_signature(cursor, &symbol.signature.enum_t)) {
-            symbols[symbol_count] = symbol;
-
-            fip_print(                                           //
-                ID, FIP_INFO, "Found enum: '%s' at line %d",     //
-                symbol.signature.enum_t.name, symbol.line_number //
-            );
-            // fip_print_sig_enum(ID, &symbol.signature.enum_t); // Uncomment if
-            // print function exists
-
-            symbol_count++;
+                curr_coll->symbol_count++;
+            }
+            break;
         }
     }
 
@@ -889,24 +1198,16 @@ void parse_c_file(char *c_file) {
         // "/usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/include"
     }
     pclose(fp);
-    const char *base_args[] = {
+    const char *args[] = {
         "-x",
         "c",
         "-std=gnu23",
         "-I",
         buf,
     };
-    const int base_args_len = 5;
-    const int num_args = base_args_len + CONFIG.compile_flags_len;
-    const char **args = (const char **)malloc(sizeof(char *) * num_args);
-    for (int i = 0; i < base_args_len; i++) {
-        args[i] = base_args[i];
-    }
-    for (int i = 0; i < (int)CONFIG.compile_flags_len; i++) {
-        args[base_args_len + i] = CONFIG.compile_flags[i];
-    }
+    const size_t num_args = 5;
     fip_print(ID, FIP_DEBUG, "Clang Parse Arguments:");
-    for (int i = 0; i < num_args; i++) {
+    for (size_t i = 0; i < num_args; i++) {
         fip_print(ID, FIP_DEBUG, "  %s", args[i]);
     }
     CXTranslationUnit unit = clang_parseTranslationUnit(               //
@@ -929,66 +1230,107 @@ void parse_c_file(char *c_file) {
     clang_disposeTranslationUnit(unit);
     clang_disposeIndex(index);
 
-    fip_print(                                           //
-        ID, FIP_INFO, "Found %d extern functions in %s", //
-        symbol_count, c_file                             //
+    fip_print(                                  //
+        ID, FIP_INFO, "Found %d symbols in %s", //
+        curr_coll->symbol_count, c_file         //
     );
+}
+
+void handle_function_symbol_request(         //
+    const fip_msg_t *message,                //
+    fip_msg_symbol_response_t *const sym_res //
+) {
+    assert(message->u.sym_req.type == FIP_SYM_FUNCTION);
+    const fip_sig_fn_t *msg_fn = &message->u.sym_req.sig.fn;
+    fip_print_sig_fn(ID, msg_fn);
+    sym_res->type = FIP_SYM_FUNCTION;
+
+    bool sym_match = false;
+    fip_print(ID, FIP_DEBUG, "symbol_list.count=%lu", symbol_list.count);
+    for (size_t i = 0; i < symbol_list.count; i++) {
+        fip_c_symbol_collection_t *const collection =
+            &symbol_list.collection[i];
+        fip_print(ID, FIP_DEBUG, "collection->symbol_count=%lu",
+            collection->symbol_count);
+        for (size_t j = 0; j < collection->symbol_count; j++) {
+            const fip_c_symbol_t *symbol = &collection->symbols[j];
+            if (symbol->type != FIP_SYM_FUNCTION) {
+                continue;
+            }
+            fip_print(ID, FIP_DEBUG, "Checking function");
+            fip_print_sig_fn(ID, &symbol->signature.fn);
+            const fip_sig_fn_t *sym_fn = &symbol->signature.fn;
+            if (strcmp(sym_fn->name, msg_fn->name) == 0 //
+                && sym_fn->args_len == msg_fn->args_len //
+                && sym_fn->rets_len == msg_fn->rets_len //
+            ) {
+                sym_match = true;
+                // Now we need to check if the arg and ret types match
+                for (uint32_t k = 0; k < sym_fn->args_len; k++) {
+                    if (sym_fn->args[k].type != msg_fn->args[k].type ||
+                        sym_fn->args[k].is_mutable !=
+                            msg_fn->args[k].is_mutable) {
+                        sym_match = false;
+                    }
+                }
+                for (uint32_t k = 0; k < sym_fn->rets_len; k++) {
+                    if (sym_fn->rets[k].type != msg_fn->rets[k].type ||
+                        sym_fn->rets[k].is_mutable !=
+                            msg_fn->rets[k].is_mutable) {
+                        sym_match = false;
+                    }
+                }
+                if (sym_match) {
+                    // We found the requested symbol
+                    collection->needed = true;
+                    fip_clone_sig_fn(&sym_res->sig.fn, sym_fn);
+                    memcpy(sym_res->sig.fn.name, sym_fn->name, 128);
+                    break;
+                }
+            }
+        }
+        if (sym_match) {
+            break;
+        }
+    }
+    sym_res->found = sym_match;
 }
 
 void handle_symbol_request(    //
     char buffer[FIP_MSG_SIZE], //
     const fip_msg_t *message   //
 ) {
-    assert(message->u.sym_req.type == FIP_SYM_FUNCTION);
+    assert(message->type == FIP_MSG_SYMBOL_REQUEST);
     fip_print(ID, FIP_INFO, "Symbol Request Received");
-    const fip_sig_fn_t *msg_fn = &message->u.sym_req.sig.fn;
-    fip_print_sig_fn(ID, msg_fn);
+    // Create the response structure
     fip_msg_t response = {0};
     response.type = FIP_MSG_SYMBOL_RESPONSE;
-    fip_msg_symbol_response_t *sym_res = &response.u.sym_res;
+    fip_msg_symbol_response_t *const sym_res = &response.u.sym_res;
     strncpy(sym_res->module_name, MODULE_NAME,
         sizeof(sym_res->module_name) - 1);
     sym_res->module_name[sizeof(sym_res->module_name) - 1] = '\0';
-    sym_res->type = FIP_SYM_FUNCTION;
 
-    bool sym_match = false;
-    for (uint32_t i = 0; i < symbol_count; i++) {
-        const fip_sig_fn_t *sym_fn = &symbols[i].signature.fn;
-        if (strcmp(sym_fn->name, msg_fn->name) == 0 //
-            && sym_fn->args_len == msg_fn->args_len //
-            && sym_fn->rets_len == msg_fn->rets_len //
-        ) {
-            sym_match = true;
-            // Now we need to check if the arg and ret types match
-            for (uint32_t j = 0; j < sym_fn->args_len; j++) {
-                if (sym_fn->args[j].type != msg_fn->args[j].type ||
-                    sym_fn->args[j].is_mutable != msg_fn->args[j].is_mutable) {
-                    sym_match = false;
-                }
-            }
-            for (uint32_t j = 0; j < sym_fn->rets_len; j++) {
-                if (sym_fn->rets[j].type != msg_fn->rets[j].type ||
-                    sym_fn->rets[j].is_mutable != msg_fn->rets[j].is_mutable) {
-                    sym_match = false;
-                }
-            }
-            if (sym_match) {
-                // We found the requested symbol
-                symbols[i].needed = true;
-                fip_clone_sig_fn(&sym_res->sig.fn, sym_fn);
-                memcpy(sym_res->sig.fn.name, sym_fn->name, 128);
-                break;
-            }
-        }
+    switch (message->u.sym_req.type) {
+        case FIP_SYM_UNKNOWN:
+            fip_print(ID, FIP_DEBUG, "Not implemented yet");
+            return;
+        case FIP_SYM_FUNCTION:
+            handle_function_symbol_request(message, sym_res);
+            break;
+        case FIP_SYM_DATA:
+            fip_print(ID, FIP_DEBUG, "Not implemented yet");
+            return;
+        case FIP_SYM_ENUM:
+            fip_print(ID, FIP_DEBUG, "Not implemented yet");
+            return;
     }
-    sym_res->found = sym_match;
     fip_slave_send_message(ID, buffer, &response);
 }
 
-bool compile_file(                                    //
+bool compile_module(                                  //
     uint8_t *path_count,                              //
     char paths[FIP_PATHS_SIZE],                       //
-    const char *file_path,                            //
+    fip_module_config_t *config,                      //
     [[maybe_unused]] const fip_msg_t *compile_message //
 ) {
     // Ensure .fip/cache directory exists
@@ -1016,99 +1358,54 @@ bool compile_file(                                    //
         return false;
     }
 #endif
-
     // TODO: Use the target information from the compile_message
-    //
-    // First we need to calculate a hash of the source file's path and then the
-    // compiled object will be stored in the `.fip/cache/` directory as
-    // `HASH.o`. This way each "file path" is not the absolute path to the
-    // object file but a simple hash instead, making it predictable how many
-    // file paths / hashes can fit inside the paths array!
-    //
-    // We need to know the hash before even compiling the file at all
-    char hash[FIP_PATH_SIZE + 1] = {0};
-    fip_create_hash(hash, file_path);
-    // This is only needed for the below strstr function
-    hash[FIP_PATH_SIZE] = '\0';
+    // compile_message->u.com_req.target
 
     // Check if the hash is already part of the paths, if it is we already
-    // compiled the file
+    // compiled the module
+    const char *const hash = config->output;
     if (strstr(paths, hash)) {
         return true;
     }
 
-    // Build compile command with flags
-    char compile_flags[1024] = {0};
-    // Add all compile flags
-    for (uint32_t i = 0; i < CONFIG.compile_flags_len; i++) {
-        strcat(compile_flags, CONFIG.compile_flags[i]);
-        if (i + 1 < CONFIG.compile_flags_len) {
-            strcat(compile_flags, " ");
-        }
+    size_t command_size = 0;
+    for (size_t i = 0; i < config->command_len; i++) {
+        command_size += strlen(config->command[i]) + 1;
     }
-
-    // Determine if we're using MSVC or GCC/Clang
-    bool is_msvc = ( //
-        (strstr(CONFIG.compiler, "cl") != NULL &&
-            strstr(CONFIG.compiler, "clang") == NULL) ||
-        strstr(CONFIG.compiler, "cl.exe") != NULL);
-
-#ifdef __WIN32__
-    const char *file_extension = "obj";
-#else
-    const char *file_extension = "o";
-#endif
-
-    char output_path[64] = {0};
-    char compile_cmd[1024] = {0};
-    int ret;
-
-    if (is_msvc) {
-        // MSVC (cl.exe) flags
-        snprintf(output_path, sizeof(output_path), ".fip/cache/%.8s.%s", hash,
-            file_extension);
-        ret = snprintf(compile_cmd, sizeof(compile_cmd),
-            "%s /TC /c %s \"%s\" /Fo\"%s\"", CONFIG.compiler, compile_flags,
-            file_path, output_path);
-        // /TC = treat all files as C source files
-        // /c = compile only, don't link
-        // /Fo = specify output object file name
-    } else {
-        // GCC/Clang flags
-        snprintf(output_path, sizeof(output_path), ".fip/cache/%.8s.%s", hash,
-            file_extension);
-        ret = snprintf(compile_cmd, sizeof(compile_cmd),
-            "%s -x c -c %s \"%s\" -o \"%s\"", CONFIG.compiler, compile_flags,
-            file_path, output_path);
-        // -x c = treat file as C source
-        // -c = compile only, don't link
-        // -o = specify output file
+    char *const command = (char *)malloc(command_size);
+    size_t idx = 0;
+    for (size_t i = 0; i < config->command_len; i++) {
+        const size_t len = strlen(config->command[i]);
+        memcpy(command + idx, config->command[i], len);
+        idx += len;
+        command[idx] = ' ';
+        idx++;
     }
-
-    if (ret >= (int)sizeof(compile_cmd)) {
-        fip_print(ID, FIP_ERROR, "Compile command too long, truncated");
-        return false;
-    }
-    fip_print(ID, FIP_INFO, "Executing: %s", compile_cmd);
+    command[command_size - 1] = '\0';
+    fip_print(ID, FIP_INFO, "Executing: %s", command);
 
     char *compile_output = NULL;
-    int exit_code = fip_execute_and_capture(&compile_output, compile_cmd);
+    int exit_code = fip_execute_and_capture(&compile_output, command);
     if (exit_code != 0) {
         if (compile_output && compile_output[0]) {
             fip_print(ID, FIP_ERROR, "%s", compile_output);
         }
-        fip_print(ID, FIP_ERROR, "Compiling file '%s' failed with exit code %d",
-            file_path, exit_code);
+        fip_print(ID, FIP_ERROR,                              //
+            "Compiling module '%s' failed with exit code %d", //
+            config->tag, exit_code                            //
+        );
         free(compile_output);
+        free(command);
         return false;
     } else {
         if (compile_output && compile_output[0]) {
             fip_print(ID, FIP_INFO, "%s", compile_output);
         }
         free(compile_output);
+        free(command);
     }
 
-    fip_print(ID, FIP_INFO, "Compiled '%.8s' successfully", hash);
+    fip_print(ID, FIP_INFO, "Compiled '%s' successfully", hash);
     // Add to paths array. For this we need to find the first null-byte
     // character in the paths array, that's where we will place our hash at.
     // The good thing is that we only need to check multiples of 8 so this
@@ -1145,20 +1442,22 @@ void handle_compile_request(   //
         sizeof(obj_res->module_name) - 1);
     obj_res->module_name[sizeof(obj_res->module_name) - 1] = '\0';
 
-    // We need to go through all symbols and see whether they need to be
+    // We need to go through all modules and see whether they need to be
     // compiled
-    for (uint32_t i = 0; i < symbol_count; i++) {
-        if (symbols[i].needed) {
-            if (!compile_file(                            //
-                    &obj_res->path_count, obj_res->paths, //
-                    symbols[i].source_file_path, message) //
-            ) {
-                obj_res->has_obj = false;
-                obj_res->compilation_failed = true;
-                break;
-            }
-            obj_res->has_obj = true;
+    for (size_t i = 0; i < symbol_list.count; i++) {
+        fip_c_symbol_collection_t *const coll = &symbol_list.collection[i];
+        if (!coll->needed) {
+            continue;
         }
+        if (!compile_module(                          //
+                &obj_res->path_count, obj_res->paths, //
+                &CONFIGS.configs[i], message)         //
+        ) {
+            obj_res->has_obj = false;
+            obj_res->compilation_failed = true;
+            break;
+        }
+        obj_res->has_obj = true;
     }
 
     fip_slave_send_message(ID, buffer, &response);
@@ -1223,13 +1522,6 @@ int main(int argc, char *argv[]) {
         goto send;
     }
     toml_free(toml);
-    if (CONFIG.sources_len == 0) {
-        fip_print(                                                            //
-            ID, FIP_ERROR,                                                    //
-            "The '%s' module does not have any sources declared", MODULE_NAME //
-        );
-        goto send;
-    }
     fip_print(ID, FIP_INFO, "Parsed %s.toml file", MODULE_NAME);
 
 send:
@@ -1243,24 +1535,34 @@ send:
     fip_print(ID, FIP_INFO, "Sending connect request to master...");
     fip_slave_send_message(ID, msg_buf, &msg);
 
-    // Print all sources and all compile flags and parse all source files
-    for (uint32_t i = 0; i < CONFIG.compile_flags_len; i++) {
-        fip_print(                                  //
-            ID, FIP_DEBUG, "compile_flags[%u]: %s", //
-            i, CONFIG.compile_flags[i]              //
-        );
-    }
-    for (uint32_t i = 0; i < CONFIG.sources_len; i++) {
-        fip_print(ID, FIP_DEBUG, "source[%u]: %s", i, CONFIG.sources[i]);
-    }
-    for (uint32_t i = 0; i < CONFIG.sources_len; i++) {
-        fip_print(ID, FIP_DEBUG, "parsing source '%s'...", CONFIG.sources[i]);
-        clock_t start = clock();
-        parse_c_file(CONFIG.sources[i]);
-        clock_t end = clock();
-        double parse_time = ((double)(end - start)) / CLOCKS_PER_SEC;
-        fip_print(ID, FIP_DEBUG, "parsing '%s' took %f s", CONFIG.sources[i],
-            parse_time);
+    symbol_list.count = CONFIGS.count;
+    symbol_list.collection = (fip_c_symbol_collection_t *)malloc( //
+        sizeof(fip_c_symbol_collection_t) * CONFIGS.count         //
+    );
+
+    // Print all tags of the config and all headers and the command of it
+    for (size_t i = 0; i < CONFIGS.count; i++) {
+        fip_module_config_t *config = &CONFIGS.configs[i];
+        curr_coll = &symbol_list.collection[i];
+        strcpy(curr_coll->tag, config->tag);
+        curr_coll->symbol_count = 0;
+
+        fip_print(ID, FIP_DEBUG, "[%s]", config->tag);
+        for (size_t j = 0; j < config->headers_len; j++) {
+            fip_print(ID, FIP_DEBUG, "headers[%lu]: %s", j, config->headers[j]);
+            fip_print(                                                      //
+                ID, FIP_DEBUG, "parsing header '%s'...", config->headers[i] //
+            );
+            clock_t start = clock();
+            parse_c_file(config->headers[i]);
+            clock_t end = clock();
+            double parse_time = ((double)(end - start)) / CLOCKS_PER_SEC;
+            fip_print(ID, FIP_DEBUG, "parsing '%s' took %f s",
+                config->headers[i], parse_time);
+        }
+        for (size_t j = 0; j < config->command_len; j++) {
+            fip_print(ID, FIP_DEBUG, "command[%lu]: %s", j, config->command[j]);
+        }
     }
 
     // Main loop - wait for messages from master
@@ -1291,6 +1593,18 @@ send:
                     handle_compile_request(msg_buf, &message);
                     break;
                 case FIP_MSG_OBJECT_RESPONSE:
+                    // The slave should not receive a message it sends
+                    assert(false);
+                    break;
+                case FIP_MSG_TAG_REQUEST:
+                    fip_print(ID, FIP_ERROR, "TODO: Recieved tag request");
+                    // handle_tag_request(msg_buf, &message);
+                    break;
+                case FIP_MSG_TAG_PRESENT_RESPONSE:
+                    // The slave should not receive a message it sends
+                    assert(false);
+                    break;
+                case FIP_MSG_TAG_SYMBOL_RESPONSE:
                     // The slave should not receive a message it sends
                     assert(false);
                     break;

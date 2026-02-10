@@ -1,3 +1,4 @@
-compiler = "clang"
-sources = ["/usr/include/raylib.h"]
-compile_flags = ["-g"]
+[extern]
+headers = ["extern.h"]
+sources = ["extern.h"]
+command = ["clang", "-g", "__SOURCES__", "-o", "__OUTPUT__"]

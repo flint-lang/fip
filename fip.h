@@ -138,13 +138,31 @@ typedef uint8_t fip_type_prim_e;
 /// @typedef `fip_msg_type_e`
 /// @bfief Enum of all possible messages the FIP can handle
 enum {
-    FIP_MSG_UNKNOWN = 0,     // Unknown message
-    FIP_MSG_CONNECT_REQUEST, // Slave trying to connect to master
-    FIP_MSG_SYMBOL_REQUEST,  // Master requesting symbol resolution
-    FIP_MSG_SYMBOL_RESPONSE, // Slave response of FN_REQ
-    FIP_MSG_COMPILE_REQUEST, // Master requesting all slaves to compile
-    FIP_MSG_OBJECT_RESPONSE, // Slave responding compilation with .o file
-    FIP_MSG_KILL,            // Kill command comes last
+    // Unknown message
+    FIP_MSG_UNKNOWN = 0,
+    // Slave trying to connect to master
+    FIP_MSG_CONNECT_REQUEST,
+    // Master requesting symbol resolution
+    FIP_MSG_SYMBOL_REQUEST,
+    // Slave response of FN_REQ
+    FIP_MSG_SYMBOL_RESPONSE,
+    // Master requesting all slaves to compile
+    FIP_MSG_COMPILE_REQUEST,
+    // Slave responding compilation with .o file
+    FIP_MSG_OBJECT_RESPONSE,
+    // The master requests that each IM searches for a certain tag and the
+    // symbols from that tag
+    FIP_MSG_TAG_REQUEST,
+    // The IM's response to the request. It sends whether it contains that
+    // searched-for tag. If it contains this tag then it will send all the tag
+    // symbol responses it contains. The master then reads every single sent tag
+    // symbol response of the IM
+    FIP_MSG_TAG_PRESENT_RESPONSE,
+    // The IM's response to the tag request. It sends one symbol at a time and
+    // whether that was the last symbol it provides
+    FIP_MSG_TAG_SYMBOL_RESPONSE,
+    // Kill command comes last
+    FIP_MSG_KILL,
 };
 typedef uint8_t fip_msg_type_e;
 
@@ -263,6 +281,15 @@ typedef struct {
     fip_type_t *rets;
 } fip_sig_fn_t;
 
+/// @typedef `fip_sig_data_t`
+/// @brief Struct representing the signature of FIP-defined data
+typedef struct {
+    char name[128];
+    uint8_t value_count;
+    char **value_names;
+    fip_type_t *value_types;
+} fip_sig_data_t;
+
 /// @typedef `fip_sig_enum_t`
 /// @brief Struct representing the signature of a FIP-defined enum
 typedef struct {
@@ -274,6 +301,28 @@ typedef struct {
     // i64. The underlying enum type can differ
     size_t *values;
 } fip_sig_enum_t;
+
+/// @typedef `fip_sig_u`
+/// @brief Union of all possible signatures defined in FIP
+typedef union {
+    fip_sig_fn_t fn;
+    fip_sig_data_t data;
+    fip_sig_enum_t enum_t;
+} fip_sig_u;
+
+/// @typedef `fip_sig_t`
+/// @brief Struct representing a signature defined in FIP
+typedef struct {
+    fip_msg_symbol_type_e type;
+    fip_sig_u sig;
+} fip_sig_t;
+
+/// @typedef `fip_sig_list_t`
+/// @brief Struct representing a list of signatures
+typedef struct {
+    size_t count;
+    fip_sig_t sigs[];
+} fip_sig_list_t;
 
 /*
  * ==================
@@ -297,10 +346,7 @@ typedef struct {
 /// @brief Struct representing the symbol request message
 typedef struct {
     fip_msg_symbol_type_e type;
-    union {
-        fip_sig_fn_t fn;
-        fip_sig_enum_t enum_t;
-    } sig;
+    fip_sig_u sig;
 } fip_msg_symbol_request_t;
 
 /// @typedef `fip_msg_symbol_response_t`
@@ -309,10 +355,7 @@ typedef struct {
     bool found;
     char module_name[FIP_MAX_MODULE_NAME_LEN];
     fip_msg_symbol_type_e type;
-    union {
-        fip_sig_fn_t fn;
-        fip_sig_enum_t enum_t;
-    } sig;
+    fip_sig_u sig;
 } fip_msg_symbol_response_t;
 
 /// @typedef `fip_msg_compile_request_t`
@@ -340,17 +383,38 @@ typedef struct {
     char paths[FIP_PATHS_SIZE];
 } fip_msg_object_response_t;
 
-/// @typedef `fip_msg_kill_reason_t`
+/// @typedef `fip_msg_tag_request_t`
+/// @brief Struct representing the tag request message
+typedef struct {
+    char tag[128];
+} fip_msg_tag_request_t;
+
+/// @typedef `fip_msg_tag_present_response_t`
+/// @brief Struct representing the tag present response message
+typedef struct {
+    bool is_present;
+} fip_msg_tag_present_response_t;
+
+/// @typedef `fip_msg_tag_symbol_response_t`
+/// @brief Struct representing the tag symbol response message
+typedef struct {
+    bool is_empty;
+    fip_msg_symbol_type_e type;
+    fip_sig_u sig;
+} fip_msg_tag_symbol_response_t;
+
+/// @typedef `fip_msg_kill_reason_e`
 /// @brief The reason enum for the kill command
-typedef enum : uint8_t {
+enum {
     FIP_KILL_FINISH = 0,
     FIP_KILL_VERSION_MISMATCH,
-} fip_msg_kill_reason_t;
+};
+typedef uint8_t fip_msg_kill_reason_e;
 
 /// @typedef `fip_msg_kill_t`
 /// @brief Struct representing the kill message
 typedef struct {
-    fip_msg_kill_reason_t reason;
+    fip_msg_kill_reason_e reason;
 } fip_msg_kill_t;
 
 /// @typedef `fip_msg_t`
@@ -363,6 +427,9 @@ typedef struct {
         fip_msg_symbol_response_t sym_res;
         fip_msg_compile_request_t com_req;
         fip_msg_object_response_t obj_res;
+        fip_msg_tag_request_t tag_req;
+        fip_msg_tag_present_response_t tag_pres_res;
+        fip_msg_tag_symbol_response_t tag_sym_res;
         fip_msg_kill_t kill;
     } u;
 } fip_msg_t;
@@ -483,12 +550,47 @@ void fip_print_type(       //
 /// @param `sig` The function signature to print
 void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig);
 
+/// @function `fip_print_sig_data`
+/// @brief Prints a parsed data definition signature to the console
+///
+/// @param `id` The id of the process in which the signature is printed
+/// @param `sig` The data signature to print
+void fip_print_sig_data(uint32_t id, const fip_sig_data_t *sig);
+
+/// @function `fip_print_sig_enum`
+/// @brief Prints a parsed enum definition signature to the console
+///
+/// @param `id` The id of the process in which the signature is printed
+/// @param `sig` The enum signature to print
+void fip_print_sig_enum(uint32_t id, const fip_sig_enum_t *sig);
+
 /// @function `fip_clone_sig_fn`
 /// @brief Clones a given function signature from the source to the destination
 ///
 /// @brief `dest` The signature to fill
 /// @brief `src` The source to clone
 void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src);
+
+/// @function `fip_clone_sig_data`
+/// @brief Clones a given data signature from the source to the destination
+///
+/// @brief `dest` The signature to fill
+/// @brief `src` The source to clone
+void fip_clone_sig_data(fip_sig_data_t *dest, const fip_sig_data_t *src);
+
+/// @function `fip_clone_sig_enum`
+/// @brief Clones a given enum signature from the source to the destination
+///
+/// @brief `dest` The signature to fill
+/// @brief `src` The source to clone
+void fip_clone_sig_enum(fip_sig_enum_t *dest, const fip_sig_enum_t *src);
+
+/// @function `fip_clone_type`
+/// @brief Clones a given type from the source to the destination
+///
+/// @brief `dest` The type to fill
+/// @brief `src` The source to clone
+void fip_clone_type(fip_type_t *dest, const fip_type_t *src);
 
 /// @function `fip_execute_and_capture`
 /// @brief Executes the given command and captures both stdout and stderr in the
@@ -510,11 +612,15 @@ int fip_execute_and_caputre(char **output, const char *command);
 
 #define FIP_MAX_ENABLED_MODULES 16
 
+/// @typedef `fip_interop_modules_t`
+/// @brief A list of all active interop modules spawned by the master
 typedef struct {
     uint8_t active_count;
     pid_t pids[FIP_MAX_SLAVES];
 } fip_interop_modules_t;
 
+/// @typedef `fip_master_state_t`
+/// @brief The structure containing the whole state of the entire master
 typedef struct {
     FILE *slave_stdin[FIP_MAX_SLAVES];
     FILE *slave_stdout[FIP_MAX_SLAVES];
@@ -524,6 +630,8 @@ typedef struct {
     uint32_t response_count;
 } fip_master_state_t;
 
+/// @typedef `fip_master_config`
+/// @brief The structure containing the results of the parsed toml file
 typedef struct {
     bool ok;
     char enabled_modules[FIP_MAX_ENABLED_MODULES][FIP_MAX_MODULE_NAME_LEN];
@@ -642,6 +750,21 @@ bool fip_master_compile_request( //
     const fip_msg_t *message     //
 );
 
+/// @function `fip_master_tag_request`
+/// @brief Broadcasts a tag request message and then collects all the symbols of
+/// all interop modules
+///
+/// @param `buffer` The buffer in which the to-be-sent message and the recieved
+/// messages will be stored in
+/// @param `message` The tag request message to send
+/// @return `fip_sig_list_t *` A list of all collected signatures from the tag
+///
+/// @note This function asserts the message type to be FIP_MSG_TAG_REQUEST
+fip_sig_list_t *fip_master_tag_request( //
+    char buffer[FIP_MSG_SIZE],          //
+    const fip_msg_t *message            //
+);
+
 /// @function `fip_master_cleanup`
 /// @brief Cleans up the master
 void fip_master_cleanup();
@@ -719,6 +842,9 @@ const char *fip_msg_type_str[] = {
     "FIP_MSG_SYMBOL_RESPONSE",
     "FIP_MSG_COMPILE_REQUEST",
     "FIP_MSG_OBJECT_RESPONSE",
+    "FIP_MSG_TAG_REQUEST",
+    "FIP_MSG_TAG_PRESENT_RESPONSE",
+    "FIP_MSG_TAG_SYMBOL_RESPONSE",
     "FIP_MSG_KILL",
 };
 
@@ -1335,7 +1461,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
         }
         case FIP_MSG_KILL:
             // The kill message just adds why the kill happens
-            message->u.kill.reason = (fip_msg_kill_reason_t)buffer[idx++];
+            message->u.kill.reason = (fip_msg_kill_reason_e)buffer[idx++];
             break;
     }
 }
@@ -1651,21 +1777,130 @@ void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig) {
     }
 }
 
+void fip_print_sig_data(uint32_t id, const fip_sig_data_t *sig) {
+    fip_print(id, FIP_DEBUG, "  Data Signature:");
+    fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
+    char buffer[1024] = {0};
+    int idx = 0;
+    for (uint32_t i = 0; i < sig->value_count; i++) {
+        idx = 0;
+        const char *const value_name = sig->value_names[i];
+        const fip_type_t *const value_type = &sig->value_types[i];
+        fip_print_type(buffer, &idx, value_type);
+        if (value_type->is_mutable) {
+            fip_print(id, FIP_DEBUG, "    %s: mut %s", value_name, buffer);
+        } else {
+            fip_print(id, FIP_DEBUG, "    %s: const %s", value_name, buffer);
+        }
+    }
+}
+
+void fip_print_sig_enum(uint32_t id, const fip_sig_enum_t *sig) {
+    fip_print(id, FIP_DEBUG, "  Enum Signature:");
+    fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
+    for (uint32_t i = 0; i < sig->value_count; i++) {
+        const char *const value_tag = sig->tags[i];
+        const size_t value = sig->values[i];
+        fip_print(id, FIP_DEBUG, "    %s: %u", value_tag, value);
+    }
+}
+
 void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
-    memcpy(dest->name, src->name, 128);
+    memcpy(dest->name, src->name, sizeof(src->name));
     dest->args_len = src->args_len;
     if (src->args_len > 0) {
         dest->args = (fip_type_t *)malloc(sizeof(fip_type_t) * src->args_len);
         for (uint8_t i = 0; i < src->args_len; i++) {
-            dest->args[i] = src->args[i];
+            fip_clone_type(&dest->args[i], &src->args[i]);
         }
     }
     dest->rets_len = src->rets_len;
     if (src->rets_len > 0) {
         dest->rets = (fip_type_t *)malloc(sizeof(fip_type_t) * src->rets_len);
         for (uint8_t i = 0; i < src->rets_len; i++) {
-            dest->rets[i] = src->rets[i];
+            fip_clone_type(&dest->rets[i], &src->rets[i]);
         }
+    }
+}
+
+void fip_clone_sig_data(fip_sig_data_t *dest, const fip_sig_data_t *src) {
+    memcpy(dest->name, src->name, sizeof(src->name));
+    dest->value_count = src->value_count;
+    if (src->value_count > 0) {
+        const size_t names_size = sizeof(char *) * src->value_count;
+        dest->value_names = (char **)malloc(names_size);
+        for (uint8_t i = 0; i < src->value_count; i++) {
+            const size_t name_len = strlen(src->value_names[i]);
+            dest->value_names[i] = (char *)malloc(name_len);
+            memcpy(dest->value_names[i], src->value_names[i], name_len);
+        }
+
+        const size_t types_size = sizeof(fip_type_t) * src->value_count;
+        dest->value_types = (fip_type_t *)malloc(types_size);
+        for (uint8_t i = 0; i < src->value_count; i++) {
+            fip_clone_type(&dest->value_types[i], &src->value_types[i]);
+        }
+    }
+}
+
+void fip_clone_sig_enum(fip_sig_enum_t *dest, const fip_sig_enum_t *src) {
+    memcpy(dest->name, src->name, sizeof(src->name));
+    dest->type = src->type;
+    dest->value_count = src->value_count;
+    if (src->value_count > 0) {
+        const size_t tags_size = sizeof(char *) * src->value_count;
+        dest->tags = (char **)malloc(tags_size);
+        for (uint8_t i = 0; i < src->value_count; i++) {
+            const size_t tag_len = strlen(src->tags[i]);
+            dest->tags[i] = (char *)malloc(tag_len);
+            memcpy(dest->tags[i], src->tags[i], tag_len);
+        }
+
+        const size_t values_size = sizeof(size_t) * src->value_count;
+        dest->values = (size_t *)malloc(values_size);
+        memcpy(dest->values, src->values, values_size);
+    }
+}
+
+void fip_clone_type(fip_type_t *dest, const fip_type_t *src) {
+    dest->type = src->type;
+    dest->is_mutable = src->is_mutable;
+    switch (src->type) {
+        case FIP_TYPE_PRIMITIVE:
+            dest->u.prim = src->u.prim;
+            break;
+        case FIP_TYPE_PTR:
+            dest->u.ptr.base_type = (fip_type_t *)malloc(sizeof(fip_type_t));
+            fip_clone_type(dest->u.ptr.base_type, src->u.ptr.base_type);
+            break;
+        case FIP_TYPE_STRUCT:
+            dest->u.struct_t.field_count = src->u.struct_t.field_count;
+            if (src->u.struct_t.field_count > 0) {
+                dest->u.struct_t.fields = (fip_type_t *)malloc(      //
+                    sizeof(fip_type_t) * src->u.struct_t.field_count //
+                );
+                for (uint8_t i = 0; i < src->u.struct_t.field_count; i++) {
+                    fip_clone_type(                  //
+                        &dest->u.struct_t.fields[i], //
+                        &src->u.struct_t.fields[i]   //
+                    );
+                }
+            }
+            break;
+        case FIP_TYPE_RECURSIVE:
+            dest->u.recursive.levels_back = src->u.recursive.levels_back;
+            break;
+        case FIP_TYPE_ENUM:
+            dest->u.enum_t.bit_width = src->u.enum_t.bit_width;
+            dest->u.enum_t.is_signed = src->u.enum_t.bit_width;
+            dest->u.enum_t.value_count = src->u.enum_t.value_count;
+            if (src->u.enum_t.value_count > 0) {
+                const size_t val_size =
+                    sizeof(size_t) * src->u.enum_t.value_count;
+                dest->u.enum_t.values = (size_t *)malloc(val_size);
+                memcpy(dest->u.enum_t.values, src->u.enum_t.values, val_size);
+            }
+            break;
     }
 }
 
@@ -1952,6 +2187,178 @@ bool fip_master_compile_request( //
     return true;
 }
 
+fip_sig_list_t *fip_master_tag_request( //
+    char buffer[FIP_MSG_SIZE],          //
+    const fip_msg_t *message            //
+) {
+    assert(message->type == FIP_MSG_TAG_REQUEST);
+    fip_master_broadcast_message(buffer, message);
+
+    // Await which slave has the tag
+    uint8_t wrong_msg_count = fip_master_await_responses( //
+        buffer, master_state.responses,                   //
+        &master_state.response_count,                     //
+        FIP_MSG_TAG_PRESENT_RESPONSE                      //
+    );
+    if (wrong_msg_count > 0) {
+        fip_print(0, FIP_WARN, "Received %u faulty messages", wrong_msg_count);
+    }
+
+    uint8_t module_with_tag_count = 0;
+    uint8_t module_with_tag_id = 0;
+    for (uint8_t i = 0; i < master_state.response_count; i++) {
+        assert(master_state.responses[i].type == FIP_MSG_TAG_PRESENT_RESPONSE);
+        if (master_state.responses[i].u.tag_pres_res.is_present) {
+            module_with_tag_count++;
+            module_with_tag_id = i;
+        }
+    }
+
+    // Create an empty list which is returned in case of errors
+    fip_sig_list_t *sig_list = (fip_sig_list_t *)malloc(sizeof(fip_sig_list_t));
+    sig_list->count = 0;
+    if (module_with_tag_count > 1) {
+        fip_print(                                              //
+            0, FIP_ERROR, "Tag %s present in more than one IM", //
+            message->u.tag_req.tag                              //
+        );
+        return sig_list;
+    }
+    if (module_with_tag_count == 0) {
+        fip_print(0, FIP_INFO, "No module owns tag %s", message->u.tag_req.tag);
+        return sig_list;
+    }
+
+    // Get the stdout of the slave we got the tag id from
+    uint8_t slave_index = module_with_tag_id;
+    FILE *slave_out = master_state.slave_stdout[module_with_tag_id];
+    int slave_fd = fileno(slave_out);
+
+    // We'll read successive framed messages from the chosen slave until the
+    // slave sends a tag_sym_res where is_empty == true or until timeout/error.
+    const double PER_MESSAGE_TIMEOUT = 1.0;
+
+    while (true) {
+        // wait for data on slave_fd with a short timeout
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(slave_fd, &read_fds);
+
+        struct timeval tv;
+        tv.tv_sec = (long)PER_MESSAGE_TIMEOUT;
+        tv.tv_usec = (long)((PER_MESSAGE_TIMEOUT - tv.tv_sec) * 1000000);
+
+        int sel = select(slave_fd + 1, &read_fds, NULL, NULL, &tv);
+        if (sel < 0) {
+            fip_print(0, FIP_WARN,                                   //
+                "Select error while awaiting symbols from slave %u", //
+                slave_index                                          //
+            );
+            break;
+        } else if (sel == 0) {
+            // timeout — no message arrived in time
+            fip_print(0, FIP_WARN,                                    //
+                "Timeout awaiting next symbol message from slave %u", //
+                slave_index                                           //
+            );
+            break;
+        }
+        assert(FD_ISSET(slave_fd, &read_fds));
+
+        // Read 4 byte  message length
+        uint32_t msg_len = 0;
+        size_t r = fread(&msg_len, 1, sizeof(msg_len), slave_out);
+        if (r != sizeof(msg_len)) {
+            fip_print(0, FIP_WARN,                                     //
+                "Failed to read message length from slave %u (r=%zu)", //
+                slave_index, r                                         //
+            );
+            break;
+        }
+
+        if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
+            fip_print(0, FIP_WARN,                         //
+                "Invalid message length %u from slave %u", //
+                msg_len, slave_index                       //
+            );
+            break;
+        }
+
+        // Read payload
+        memset(buffer, 0, FIP_MSG_SIZE);
+        r = fread(buffer, 1, msg_len, slave_out);
+        if (r != msg_len) {
+            fip_print(0, FIP_WARN,                                //
+                "Short read of %u bytes from slave %u (got %zu)", //
+                msg_len, slave_index, r                           //
+            );
+            break;
+        }
+
+        // Decode into a transient fip_msg_t
+        fip_msg_t incoming;
+        memset(&incoming, 0, sizeof(incoming));
+        fip_decode_msg(buffer, &incoming);
+        if (incoming.type != FIP_MSG_TAG_SYMBOL_RESPONSE) {
+            fip_print(0, FIP_ERROR, //
+                "Recieved unexpected response from slave %u: %s (expected %s)", //
+                slave_index, fip_msg_type_str[incoming.type], //
+                fip_msg_type_str[FIP_MSG_TAG_SYMBOL_RESPONSE] //
+            );
+        }
+        fip_print(0, FIP_DEBUG, "Symbol message from slave %u: %s", //
+            slave_index, fip_msg_type_str[incoming.type]            //
+        );
+
+        // if the slave indicates empty symbol response, it's the end of list
+        if (incoming.u.tag_sym_res.is_empty) {
+            fip_print(0, FIP_DEBUG, "Slave %u indicated end of symbol list",
+                slave_index);
+            break;
+        }
+
+        // Append a new entry to sig_list
+        sig_list = (fip_sig_list_t *)realloc(sig_list,    //
+            sizeof(fip_sig_list_t) +                      //
+                sizeof(fip_sig_u) * (sig_list->count + 1) //
+        );
+
+        // Pointer to the freshly appended fip_sig_t
+        fip_sig_t *last_sig = &sig_list->sigs[sig_list->count];
+        memset(last_sig, 0, sizeof(fip_sig_u));
+
+        // Store the symbol type
+        last_sig->type = incoming.u.tag_sym_res.type;
+        switch (incoming.u.tag_sym_res.type) {
+            case FIP_SYM_UNKNOWN:
+                // nothing to copy
+                break;
+            case FIP_SYM_FUNCTION: {
+                fip_clone_sig_fn(                                     //
+                    &last_sig->sig.fn, &incoming.u.tag_sym_res.sig.fn //
+                );
+                break;
+            }
+            case FIP_SYM_DATA: {
+                fip_clone_sig_data(                                       //
+                    &last_sig->sig.data, &incoming.u.tag_sym_res.sig.data //
+                );
+                break;
+            }
+            case FIP_SYM_ENUM: {
+                fip_clone_sig_enum(                                           //
+                    &last_sig->sig.enum_t, &incoming.u.tag_sym_res.sig.enum_t //
+                );
+                break;
+            }
+        }
+        sig_list->count++;
+        fip_free_msg(&incoming);
+    }
+
+    return sig_list;
+}
+
 void fip_master_cleanup() {
     for (uint32_t i = 0; i < master_state.slave_count; i++) {
         if (master_state.slave_stdin[i]) {
@@ -2065,8 +2472,9 @@ bool fip_spawn_interop_module(      //
     si.hStdOutput = stdout_write;
     si.hStdError = stderr_write;
 
-    if (!CreateProcessA(                                                   //
-            NULL, cmdline, NULL, NULL, TRUE, 0, NULL, root_path, &si, &pi) //
+    if (!CreateProcessA( //
+            NULL, cmdline, NULL, NULL, TRUE, 0, NULL, root_path, &si,
+            &pi) //
     ) {
         fip_print(0, FIP_WARN, "Failed to spawn slave %s: %d", id,
             GetLastError());
