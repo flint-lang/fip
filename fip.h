@@ -118,7 +118,7 @@ static void msleep(unsigned int ms) {
 
 /// @typedef `fip_type_prim_e`
 /// @brief Enum of all possible primitive types supported by FIP
-enum {
+typedef enum fip_type_prim_e : uint8_t {
     FIP_VOID = 0, // void
     FIP_U8,       // unsigned char
     FIP_U16,      // unsigned short
@@ -132,12 +132,11 @@ enum {
     FIP_F64,      // double
     FIP_BOOL,     // bool (byte)
     FIP_STR,      // char*
-};
-typedef uint8_t fip_type_prim_e;
+} fip_type_prim_e;
 
 /// @typedef `fip_msg_type_e`
 /// @bfief Enum of all possible messages the FIP can handle
-enum {
+typedef enum fip_msg_type_e : uint8_t {
     // Unknown message
     FIP_MSG_UNKNOWN = 0,
     // Slave trying to connect to master
@@ -163,30 +162,27 @@ enum {
     FIP_MSG_TAG_SYMBOL_RESPONSE,
     // Kill command comes last
     FIP_MSG_KILL,
-};
-typedef uint8_t fip_msg_type_e;
+} fip_msg_type_e;
 
 /// @typedef `fip_msg_symbol_type_e`
 /// @brief Enum of all possible symbol types
-enum {
+typedef enum fip_msg_symbol_type_e : uint8_t {
     FIP_SYM_UNKNOWN = 0,
     FIP_SYM_FUNCTION,
     FIP_SYM_DATA,
     FIP_SYM_ENUM,
-};
-typedef uint8_t fip_msg_symbol_type_e;
+} fip_msg_symbol_type_e;
 
 /// @typedef `fip_log_level_e`
 /// @breif Enum of all possible log levels of FIP
-enum {
+typedef enum fip_log_level_e : uint8_t {
     FIP_NONE = 0,
     FIP_ERROR,
     FIP_WARN,
     FIP_INFO,
     FIP_DEBUG,
     FIP_TRACE,
-};
-typedef uint8_t fip_log_level_e;
+} fip_log_level_e;
 
 extern fip_log_level_e LOG_LEVEL;
 
@@ -242,14 +238,13 @@ typedef struct {
 
 /// @typedef `fip_type_e`
 /// @brief The enum containing all possible FIP types there are
-enum {
+typedef enum fip_type_e : uint8_t {
     FIP_TYPE_PRIMITIVE,
     FIP_TYPE_PTR,
     FIP_TYPE_STRUCT,
     FIP_TYPE_RECURSIVE,
     FIP_TYPE_ENUM,
-};
-typedef uint8_t fip_type_e;
+} fip_type_e;
 
 /// @typedef `fip_type_t`
 /// @brief The struct representing a type in FIP
@@ -405,11 +400,10 @@ typedef struct {
 
 /// @typedef `fip_msg_kill_reason_e`
 /// @brief The reason enum for the kill command
-enum {
+typedef enum fip_msg_kill_reason_e : uint8_t {
     FIP_KILL_FINISH = 0,
     FIP_KILL_VERSION_MISMATCH,
-};
-typedef uint8_t fip_msg_kill_reason_e;
+} fip_msg_kill_reason_e;
 
 /// @typedef `fip_msg_kill_t`
 /// @brief Struct representing the kill message
