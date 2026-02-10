@@ -1814,6 +1814,37 @@ void fip_free_msg(fip_msg_t *message) {
             memset(message->u.obj_res.module_name, 0, FIP_MAX_MODULE_NAME_LEN);
             memset(message->u.obj_res.paths, 0, FIP_PATHS_SIZE);
             break;
+        case FIP_MSG_TAG_REQUEST:
+            memset(message->u.tag_req.tag, 0, sizeof(message->u.tag_req.tag));
+            break;
+        case FIP_MSG_TAG_PRESENT_RESPONSE:
+            break;
+        case FIP_MSG_TAG_SYMBOL_RESPONSE:
+            message->u.tag_sym_res.is_empty = false;
+            switch (message->u.tag_sym_res.type) {
+                case FIP_SYM_UNKNOWN:
+                    break;
+
+                case FIP_SYM_FUNCTION:
+                    break;
+
+                case FIP_SYM_DATA:
+
+                    break;
+                case FIP_SYM_ENUM: {
+                    fip_sig_enum_t *enum_t = &message->u.tag_sym_res.sig.enum_t;
+                    memset(enum_t->name, 0, sizeof(enum_t->name));
+                    enum_t->type = FIP_VOID;
+                    for (uint8_t i = 0; i < enum_t->value_count; i++) {
+                        free(enum_t->tags[i]);
+                    }
+                    free(enum_t->tags);
+                    free(enum_t->values);
+                    break;
+                }
+            }
+            message->u.tag_sym_res.type = FIP_SYM_UNKNOWN;
+            break;
         case FIP_MSG_KILL:
             // The enum does not need to be changed at all
             break;
