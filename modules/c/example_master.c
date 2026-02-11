@@ -22,7 +22,7 @@ int main() {
     fip_interop_modules_t interop_modules = {0};
 
     // Create a buffer used for sending messages
-    _Alignas(_Alignof(size_t)) char msg_buf[FIP_MSG_SIZE] = {0};
+    char msg_buf[FIP_MSG_SIZE] = {0};
 
     // First parse the config file (fip.toml)
     fip_master_config_t config_file = fip_master_load_config( //

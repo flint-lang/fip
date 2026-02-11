@@ -66,7 +66,7 @@ typedef struct {
         fip_sig_fn_t fn;
         fip_sig_data_t data;
         fip_sig_enum_t enum_t;
-    } signature;
+    } sig;
 } fip_c_symbol_t;
 
 typedef struct {
@@ -1134,14 +1134,14 @@ enum CXChildVisitResult visit_ast_node( //
             symbol.line_number = (int)line;
             symbol.type = FIP_SYM_FUNCTION;
 
-            if (extract_function_signature(cursor, &symbol.signature.fn)) {
+            if (extract_function_signature(cursor, &symbol.sig.fn)) {
                 curr_coll->symbols[curr_coll->symbol_count] = symbol;
 
                 fip_print(                                                  //
                     ID, FIP_INFO, "Found extern function: '%s' at line %d", //
-                    symbol.signature.fn.name, symbol.line_number            //
+                    symbol.sig.fn.name, symbol.line_number                  //
                 );
-                fip_print_sig_fn(ID, &symbol.signature.fn);
+                fip_print_sig_fn(ID, &symbol.sig.fn);
 
                 curr_coll->symbol_count++;
             }
@@ -1169,12 +1169,12 @@ enum CXChildVisitResult visit_ast_node( //
             symbol.line_number = (int)line;
             symbol.type = FIP_SYM_ENUM;
 
-            if (extract_enum_signature(cursor, &symbol.signature.enum_t)) {
+            if (extract_enum_signature(cursor, &symbol.sig.enum_t)) {
                 curr_coll->symbols[curr_coll->symbol_count] = symbol;
 
-                fip_print(                                           //
-                    ID, FIP_INFO, "Found enum: '%s' at line %d",     //
-                    symbol.signature.enum_t.name, symbol.line_number //
+                fip_print(                                       //
+                    ID, FIP_INFO, "Found enum: '%s' at line %d", //
+                    symbol.sig.enum_t.name, symbol.line_number   //
                 );
                 // fip_print_sig_enum(ID, &symbol.signature.enum_t); //
                 // Uncomment if print function exists
@@ -1258,8 +1258,8 @@ void handle_function_symbol_request(         //
                 continue;
             }
             fip_print(ID, FIP_DEBUG, "Checking function");
-            fip_print_sig_fn(ID, &symbol->signature.fn);
-            const fip_sig_fn_t *sym_fn = &symbol->signature.fn;
+            fip_print_sig_fn(ID, &symbol->sig.fn);
+            const fip_sig_fn_t *sym_fn = &symbol->sig.fn;
             if (strcmp(sym_fn->name, msg_fn->name) == 0 //
                 && sym_fn->args_len == msg_fn->args_len //
                 && sym_fn->rets_len == msg_fn->rets_len //
@@ -1491,7 +1491,7 @@ int main(int argc, char *argv[]) {
     }
     fip_print(ID, FIP_INFO, "starting...");
 
-    _Alignas(_Alignof(size_t)) char msg_buf[FIP_MSG_SIZE] = {0};
+    char msg_buf[FIP_MSG_SIZE] = {0};
 
     // Initialize slave for stdio communication
     if (!fip_slave_init(ID)) {

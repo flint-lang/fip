@@ -87,11 +87,6 @@ extern int clock_gettime(clockid_t clk_id, struct timespec *tp);
 #define FIP_MSG_SIZE 1024
 #define FIP_SLAVE_DELAY_MS 10
 
-#ifndef FIP_ALIGNCAST
-#define FIP_ALIGNCAST(to_type, value_ptr)                                      \
-    (to_type *)__builtin_assume_aligned(value_ptr, _Alignof(to_type))
-#endif
-
 #ifdef __WIN32__
 #include <windows.h>
 [[maybe_unused]]
@@ -1194,13 +1189,10 @@ void fip_encode_type(          //
             buffer[(*idx)++] = (char)type->u.enum_t.bit_width;
             buffer[(*idx)++] = (char)type->u.enum_t.is_signed;
             buffer[(*idx)++] = (char)type->u.enum_t.value_count;
-            // Add padding to ensure the values are aligned inside the buffer
-            while (*idx % 8 != 0) {
-                buffer[(*idx)++] = 0;
-            }
             for (uint8_t i = 0; i < type->u.enum_t.value_count; i++) {
-                size_t *buffer_ptr = FIP_ALIGNCAST(size_t, &buffer[*idx]);
-                *buffer_ptr = type->u.enum_t.values[i];
+                memcpy(                                                      //
+                    &buffer[*idx], &type->u.enum_t.values[i], sizeof(size_t) //
+                );
                 *idx += 8;
             }
             break;
@@ -1255,8 +1247,10 @@ void fip_encode_sig_enum(      //
     uint32_t *idx,             //
     const fip_sig_enum_t *sig  //
 ) {
-    memcpy(buffer + *idx, sig->name, sizeof(sig->name));
-    *idx += sizeof(sig->name);
+    const size_t name_len = strlen(sig->name);
+    buffer[(*idx)++] = (char)name_len;
+    memcpy(buffer + *idx, sig->name, name_len);
+    *idx += name_len;
     buffer[(*idx)++] = sig->type;
     buffer[(*idx)++] = sig->value_count;
     // For enums we first store all tags to reduce padding needs
@@ -1266,14 +1260,9 @@ void fip_encode_sig_enum(      //
         memcpy(buffer + *idx, sig->tags[i], tag_len);
         *idx += tag_len;
     }
-    // Then we pad the index to 8 for all the size_t number containers
-    while (*idx % 8 != 0) {
-        *idx += 1;
-    }
     // And then we store all the values one after another
-    size_t *buffer_st = FIP_ALIGNCAST(size_t, buffer);
     for (uint8_t i = 0; i < sig->value_count; i++) {
-        buffer_st[i] = sig->values[i];
+        memcpy(buffer + *idx, &sig->values[i], sizeof(size_t));
         *idx += sizeof(size_t);
     }
 }
@@ -1459,13 +1448,9 @@ void fip_decode_type(                //
             type->u.enum_t.values = (size_t *)malloc( //
                 sizeof(size_t) * value_count          //
             );
-            // Skip padding in the message to ensure the values are aligned
-            while (*idx % 8 != 0) {
-                (*idx)++;
-            }
             for (uint8_t i = 0; i < value_count; i++) {
-                type->u.enum_t.values[i] = *FIP_ALIGNCAST( //
-                    size_t, &buffer[*idx]                  //
+                memcpy(                                                      //
+                    &type->u.enum_t.values[i], &buffer[*idx], sizeof(size_t) //
                 );
                 *idx += 8;
             }
@@ -1481,8 +1466,8 @@ void fip_decode_sig_fn(              //
 ) {
     // Because the name is a known size of 128 bytes we can store it directly in
     // the signature
-    memcpy(sig->name, buffer + *idx, 128);
-    *idx += 128;
+    memcpy(sig->name, buffer + *idx, sizeof(sig->name));
+    *idx += sizeof(sig->name);
     // Because each type is a simple char we can store them directly. But we
     // need to store first how many types there are. For that we store the
     // lengths directly in the buffer. The lengths are uint8_t's annyway
@@ -1539,8 +1524,9 @@ void fip_decode_sig_enum(            //
     uint32_t *idx,                   //
     fip_sig_enum_t *sig              //
 ) {
-    memcpy(sig->name, buffer + *idx, sizeof(sig->name));
-    *idx += sizeof(sig->name);
+    const uint8_t name_len = buffer[(*idx)++];
+    memcpy(sig->name, buffer + *idx, name_len);
+    *idx += name_len;
     sig->type = buffer[(*idx)++];
     sig->value_count = buffer[(*idx)++];
     // For enums we first stored all tags to reduce padding needs
@@ -1552,15 +1538,10 @@ void fip_decode_sig_enum(            //
         sig->tags[i][tag_len] = '\0';
         *idx += tag_len;
     }
-    // Then we pad the index to 8 for all the size_t number containers
-    while (*idx % 8 != 0) {
-        *idx += 1;
-    }
     // And then we store all the values one after another
-    const size_t *buffer_st = FIP_ALIGNCAST(size_t, buffer);
     sig->values = (size_t *)malloc(sizeof(size_t) * sig->value_count);
     for (uint8_t i = 0; i < sig->value_count; i++) {
-        sig->values[i] = buffer_st[i];
+        memcpy(&sig->values[i], buffer + *idx, sizeof(size_t));
         *idx += sizeof(size_t);
     }
 }
@@ -1571,7 +1552,7 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
     message->type = (fip_msg_type_e)buffer[idx++];
     switch (message->type) {
         case FIP_MSG_UNKNOWN:
-            // Recieved unknown or faulty message
+            // Received unknown or faulty message
             break;
         case FIP_MSG_CONNECT_REQUEST:
             // The connect request just puts the versions into the buffer one by
@@ -3256,7 +3237,7 @@ uint8_t fip_master_await_responses(        //
                     wrong_count++;
                     break;
                 }
-                fip_print(0, FIP_DEBUG, "Recieved message length: %u", msg_len);
+                fip_print(0, FIP_DEBUG, "Received message length: %u", msg_len);
 
                 // Read message data
                 memset(buffer, 0, FIP_MSG_SIZE);
