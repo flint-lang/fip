@@ -1539,7 +1539,7 @@ void fip_decode_sig_enum(            //
     const uint8_t name_len = buffer[(*idx)++];
     memcpy(sig->name, buffer + *idx, name_len);
     *idx += name_len;
-    sig->type = buffer[(*idx)++];
+    sig->type = (fip_type_prim_e)buffer[(*idx)++];
     sig->value_count = buffer[(*idx)++];
     // For enums we first stored all tags to reduce padding needs
     sig->tags = (char **)malloc(sizeof(char *) * sig->value_count);
@@ -1661,7 +1661,8 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
             if (!message->u.tag_sym_res.is_empty) {
                 // Only decode the content if it's not empty, to make the
                 // message to send smaller in the empty case
-                message->u.tag_sym_res.type = buffer[idx++];
+                message->u.tag_sym_res.type =
+                    (fip_msg_symbol_type_e)buffer[idx++];
                 switch (message->u.tag_sym_res.type) {
                     case FIP_SYM_UNKNOWN:
                         break;
@@ -2503,7 +2504,7 @@ fip_sig_list_t *fip_master_tag_request( //
     // the empty symbol.
     while (true) {
         // Send the next symbol request message to the slave
-        fip_msg_t request = {0};
+        fip_msg_t request = (fip_msg_t){0};
         request.type = FIP_MSG_TAG_NEXT_SYMBOL_REQUEST;
         fip_encode_msg(buffer, &request);
         uint32_t msg_len;
