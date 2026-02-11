@@ -1463,6 +1463,117 @@ void handle_compile_request(   //
     fip_slave_send_message(ID, buffer, &response);
 }
 
+void handle_tag_request(       //
+    char buffer[FIP_MSG_SIZE], //
+    const fip_msg_t *message   //
+) {
+    assert(message->type == FIP_MSG_TAG_REQUEST);
+    fip_print(ID, FIP_INFO, "Tag Request Received");
+    const char *msg_tag = message->u.tag_req.tag;
+
+    fip_msg_t response = {0};
+    response.type = FIP_MSG_TAG_PRESENT_RESPONSE;
+
+    size_t coll_id = 0;
+    bool is_present = false;
+    for (; coll_id < symbol_list.count; coll_id++) {
+        fip_c_symbol_collection_t *coll = &symbol_list.collection[coll_id];
+        if (strcmp(coll->tag, msg_tag) == 0) {
+            is_present = true;
+            break;
+        }
+    }
+    response.u.tag_pres_res.is_present = is_present;
+    fip_slave_send_message(ID, buffer, &response);
+    fip_free_msg(&response);
+
+    if (!is_present) {
+        return;
+    }
+
+    // Wait for `FIP_MSG_TAG_NEXT_SYMBOL_REQUEST` from master to tell us that it
+    // wants to have the next symbol. We simply ping-pong between the master and
+    // the slave. The master requests new symbols until we send it an empy
+    // symbol as we reached the end of the list. If we reached the end of the
+    // list then the slave will automatically fall back to it's normal
+    // execution, the master does not need to send any other message to us in
+    // this case.
+    fip_c_symbol_collection_t *const coll = &symbol_list.collection[coll_id];
+    coll->needed = true;
+    for (size_t i = 0; i < coll->symbol_count; i++) {
+        // Wait for master to request the next symbol
+        if (fip_slave_receive_message(buffer)) {
+            fip_msg_t next_message = {0};
+            fip_decode_msg(buffer, &next_message);
+            switch (next_message.type) {
+                default:
+                    fip_print(ID, FIP_ERROR,
+                        "Unexpected message from master: %s, expected %s",
+                        fip_msg_type_str[next_message.type],
+                        fip_msg_type_str[FIP_MSG_TAG_NEXT_SYMBOL_REQUEST]);
+                    fip_free_msg(&next_message);
+                    return;
+                case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
+                    break;
+            }
+        }
+        fip_c_symbol_t *const sym = &coll->symbols[i];
+        response = (fip_msg_t){0};
+        response.type = FIP_MSG_TAG_SYMBOL_RESPONSE;
+        response.u.tag_sym_res.is_empty = false;
+        response.u.tag_sym_res.type = sym->type;
+        switch (sym->type) {
+            case FIP_SYM_UNKNOWN:
+                continue;
+            case FIP_SYM_FUNCTION:
+                fip_clone_sig_fn(                   //
+                    &response.u.tag_sym_res.sig.fn, //
+                    &sym->sig.fn                    //
+                );
+                break;
+            case FIP_SYM_DATA:
+                fip_clone_sig_data(                   //
+                    &response.u.tag_sym_res.sig.data, //
+                    &sym->sig.data                    //
+                );
+                break;
+            case FIP_SYM_ENUM:
+                fip_clone_sig_enum(                     //
+                    &response.u.tag_sym_res.sig.enum_t, //
+                    &sym->sig.enum_t                    //
+                );
+                break;
+        }
+        // Send the next symbol to the master
+        fip_slave_send_message(ID, buffer, &response);
+        fip_free_msg(&response);
+    }
+    // Wait for master to request the next symbol before sending the empty
+    // symbol to it
+    if (fip_slave_receive_message(buffer)) {
+        // Only print the first time we receive a message
+        fip_msg_t next_message = {0};
+        fip_decode_msg(buffer, &next_message);
+        switch (next_message.type) {
+            default:
+                fip_print(ID, FIP_ERROR,
+                    "Unexpected message from master: %s, expected %s",
+                    fip_msg_type_str[next_message.type],
+                    fip_msg_type_str[FIP_MSG_TAG_NEXT_SYMBOL_REQUEST]);
+                fip_free_msg(&next_message);
+                return;
+            case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
+                break;
+        }
+    }
+    // Send "end of list" message
+    response = (fip_msg_t){0};
+    response.type = FIP_MSG_TAG_SYMBOL_RESPONSE;
+    response.u.tag_sym_res.is_empty = true;
+    response.u.tag_sym_res.type = FIP_SYM_UNKNOWN;
+    fip_slave_send_message(ID, buffer, &response);
+}
+
 int main(int argc, char *argv[]) {
 #ifdef _WIN32
     // Disable CRLF <-> LF translations so FIP messages are sent as raw bytes.
@@ -1597,11 +1708,16 @@ send:
                     assert(false);
                     break;
                 case FIP_MSG_TAG_REQUEST:
-                    fip_print(ID, FIP_ERROR, "TODO: Recieved tag request");
-                    // handle_tag_request(msg_buf, &message);
+                    handle_tag_request(msg_buf, &message);
                     break;
                 case FIP_MSG_TAG_PRESENT_RESPONSE:
                     // The slave should not receive a message it sends
+                    assert(false);
+                    break;
+                case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
+                    // We should never get this message in the main loop. It can
+                    // only be recieved when we are in the `handle_tag_request`
+                    // function
                     assert(false);
                     break;
                 case FIP_MSG_TAG_SYMBOL_RESPONSE:

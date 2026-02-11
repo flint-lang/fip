@@ -152,6 +152,11 @@ typedef enum fip_msg_type_e : uint8_t {
     // symbol responses it contains. The master then reads every single sent tag
     // symbol response of the IM
     FIP_MSG_TAG_PRESENT_RESPONSE,
+    // The master request a single IM to give it the next symbol in it's symbol
+    // list of the previously requested module tag. The slave will respond with
+    // symbol responses until it reaches the end of the list, responding with an
+    // empty symbol response
+    FIP_MSG_TAG_NEXT_SYMBOL_REQUEST,
     // The IM's response to the tag request. It sends one symbol at a time and
     // whether that was the last symbol it provides
     FIP_MSG_TAG_SYMBOL_RESPONSE,
@@ -833,6 +838,7 @@ const char *fip_msg_type_str[] = {
     "FIP_MSG_OBJECT_RESPONSE",
     "FIP_MSG_TAG_REQUEST",
     "FIP_MSG_TAG_PRESENT_RESPONSE",
+    "FIP_MSG_TAG_NEXT_SYMBOL_REQUEST",
     "FIP_MSG_TAG_SYMBOL_RESPONSE",
     "FIP_MSG_KILL",
 };
@@ -1117,6 +1123,9 @@ void fip_print_msg(uint32_t id, const fip_msg_t *message) {
             );
             fip_print(id, FIP_DEBUG, "}");
             break;
+        case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
+            fip_print(id, FIP_DEBUG, "FIP_MSG_TAG_NEXT_SYMBOL_REQUEST: {}");
+            break;
         case FIP_MSG_TAG_SYMBOL_RESPONSE:
             fip_print(id, FIP_DEBUG, "FIP_MSG_TAG_SYMBOL_RESPONSE: {");
             fip_print(id, FIP_DEBUG, "  .is_empty: %d", //
@@ -1371,6 +1380,8 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
         }
         case FIP_MSG_TAG_PRESENT_RESPONSE:
             buffer[idx++] = message->u.tag_pres_res.is_present;
+            break;
+        case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
             break;
         case FIP_MSG_TAG_SYMBOL_RESPONSE:
             buffer[idx++] = message->u.tag_sym_res.is_empty;
@@ -1642,6 +1653,8 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
         case FIP_MSG_TAG_PRESENT_RESPONSE:
             message->u.tag_pres_res.is_present = buffer[idx++];
             break;
+        case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
+            break;
         case FIP_MSG_TAG_SYMBOL_RESPONSE:
             message->u.tag_sym_res.is_empty = buffer[idx++];
             if (!message->u.tag_sym_res.is_empty) {
@@ -1799,6 +1812,8 @@ void fip_free_msg(fip_msg_t *message) {
             memset(message->u.tag_req.tag, 0, sizeof(message->u.tag_req.tag));
             break;
         case FIP_MSG_TAG_PRESENT_RESPONSE:
+            break;
+        case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
             break;
         case FIP_MSG_TAG_SYMBOL_RESPONSE:
             message->u.tag_sym_res.is_empty = false;
@@ -2463,6 +2478,10 @@ fip_sig_list_t *fip_master_tag_request( //
     // Create an empty list which is returned in case of errors
     fip_sig_list_t *sig_list = (fip_sig_list_t *)malloc(sizeof(fip_sig_list_t));
     sig_list->count = 0;
+    if (module_with_tag_count == 0) {
+        fip_print(0, FIP_INFO, "No module owns tag %s", message->u.tag_req.tag);
+        return sig_list;
+    }
     if (module_with_tag_count > 1) {
         fip_print(                                              //
             0, FIP_ERROR, "Tag %s present in more than one IM", //
@@ -2470,114 +2489,82 @@ fip_sig_list_t *fip_master_tag_request( //
         );
         return sig_list;
     }
-    if (module_with_tag_count == 0) {
-        fip_print(0, FIP_INFO, "No module owns tag %s", message->u.tag_req.tag);
-        return sig_list;
-    }
 
-    // Get the stdout of the slave we got the tag id from
+    // Get the stdout and stdin of the slave we got the tag id from
     uint8_t slave_index = module_with_tag_id;
     FILE *slave_out = master_state.slave_stdout[module_with_tag_id];
-    int slave_fd = fileno(slave_out);
+    FILE *slave_in = master_state.slave_stdin[module_with_tag_id];
 
-    // We'll read successive framed messages from the chosen slave until the
-    // slave sends a tag_sym_res where is_empty == true or until timeout/error.
-    const double PER_MESSAGE_TIMEOUT = 1.0;
-
+    // We keep sending `FIP_MSG_TAG_NEXT_SYMBOL_REQUEST` to the slave and we
+    // will recieve `FIP_MSG_TAG_SYMBOL_RESPONSE` messages from the slave until
+    // the symbol is empty, indicating the end of the list. We first tell the
+    // slave to "give" us the next message, then it sends the message contianing
+    // the empty symbol.
     while (true) {
-        // wait for data on slave_fd with a short timeout
-        fd_set read_fds;
-        FD_ZERO(&read_fds);
-        FD_SET(slave_fd, &read_fds);
-
-        struct timeval tv;
-        tv.tv_sec = (long)PER_MESSAGE_TIMEOUT;
-        tv.tv_usec = (long)((PER_MESSAGE_TIMEOUT - tv.tv_sec) * 1000000);
-
-        int sel = select(slave_fd + 1, &read_fds, NULL, NULL, &tv);
-        if (sel < 0) {
-            fip_print(0, FIP_WARN,                                   //
-                "Select error while awaiting symbols from slave %u", //
-                slave_index                                          //
-            );
-            break;
-        } else if (sel == 0) {
-            // timeout — no message arrived in time
-            fip_print(0, FIP_WARN,                                    //
-                "Timeout awaiting next symbol message from slave %u", //
-                slave_index                                           //
-            );
-            break;
+        // Send the next symbol request message to the slave
+        fip_msg_t request = {0};
+        request.type = FIP_MSG_TAG_NEXT_SYMBOL_REQUEST;
+        fip_encode_msg(buffer, &request);
+        uint32_t msg_len;
+        memcpy(&msg_len, buffer, sizeof(uint32_t));
+        size_t written_bytes = fwrite(buffer, 1, msg_len + 4, slave_in);
+        if (written_bytes != msg_len + 4) {
+            fip_print(0, FIP_ERROR, "Failed to write message to slave");
+            return sig_list;
         }
-        assert(FD_ISSET(slave_fd, &read_fds));
+        fflush(slave_in);
 
-        // Read 4 byte  message length
-        uint32_t msg_len = 0;
-        size_t r = fread(&msg_len, 1, sizeof(msg_len), slave_out);
-        if (r != sizeof(msg_len)) {
-            fip_print(0, FIP_WARN,                                     //
-                "Failed to read message length from slave %u (r=%zu)", //
-                slave_index, r                                         //
-            );
-            break;
+        // Wait for the response of the slave
+        // Simple timeout using non-blocking read
+        if (fread(&msg_len, 1, 4, slave_out) != 4) {
+            fip_print(0, FIP_WARN,
+                "Failed to read message length from slave %d", slave_index + 1);
+            continue;
         }
-
         if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
-            fip_print(0, FIP_WARN,                         //
-                "Invalid message length %u from slave %u", //
-                msg_len, slave_index                       //
-            );
-            break;
+            fip_print(0, FIP_WARN, "Invalid message length from slave %d: %u",
+                slave_index + 1, msg_len);
+            continue;
         }
-
-        // Read payload
         memset(buffer, 0, FIP_MSG_SIZE);
-        r = fread(buffer, 1, msg_len, slave_out);
-        if (r != msg_len) {
-            fip_print(0, FIP_WARN,                                //
-                "Short read of %u bytes from slave %u (got %zu)", //
-                msg_len, slave_index, r                           //
-            );
-            break;
+        if (fread(buffer, 1, msg_len, slave_out) != msg_len) {
+            fip_print(0, FIP_WARN,
+                "Failed to read complete message from slave %d",
+                slave_index + 1);
+            continue;
         }
+        fip_print_slave_streams();
 
-        // Decode into a transient fip_msg_t
+        // Decode the slave's message
         fip_msg_t incoming;
-        memset(&incoming, 0, sizeof(incoming));
         fip_decode_msg(buffer, &incoming);
         if (incoming.type != FIP_MSG_TAG_SYMBOL_RESPONSE) {
-            fip_print(0, FIP_ERROR, //
-                "Recieved unexpected response from slave %u: %s (expected %s)", //
-                slave_index, fip_msg_type_str[incoming.type], //
-                fip_msg_type_str[FIP_MSG_TAG_SYMBOL_RESPONSE] //
-            );
-        }
-        fip_print(0, FIP_DEBUG, "Symbol message from slave %u: %s", //
-            slave_index, fip_msg_type_str[incoming.type]            //
-        );
-
-        // if the slave indicates empty symbol response, it's the end of list
-        if (incoming.u.tag_sym_res.is_empty) {
-            fip_print(0, FIP_DEBUG, "Slave %u indicated end of symbol list",
-                slave_index);
+            fip_print(0, FIP_ERROR,
+                "Received unexpected response from slave %u: %s (expected %s)",
+                slave_index + 1, fip_msg_type_str[incoming.type],
+                fip_msg_type_str[FIP_MSG_TAG_SYMBOL_RESPONSE]);
+            fip_print_slave_streams();
             break;
         }
-
+        // Handle end of symbol list
+        if (incoming.u.tag_sym_res.is_empty) {
+            fip_print(0, FIP_DEBUG, "Slave %u indicated end of symbol list",
+                slave_index + 1);
+            fip_free_msg(&incoming);
+            break;
+        }
         // Append a new entry to sig_list
         sig_list = (fip_sig_list_t *)realloc(sig_list,    //
             sizeof(fip_sig_list_t) +                      //
-                sizeof(fip_sig_u) * (sig_list->count + 1) //
+                sizeof(fip_sig_t) * (sig_list->count + 1) //
         );
-
         // Pointer to the freshly appended fip_sig_t
-        fip_sig_t *last_sig = &sig_list->sigs[sig_list->count];
-        memset(last_sig, 0, sizeof(fip_sig_u));
-
+        fip_sig_t *const last_sig = &sig_list->sigs[sig_list->count];
+        *last_sig = (fip_sig_t){0};
         // Store the symbol type
         last_sig->type = incoming.u.tag_sym_res.type;
         switch (incoming.u.tag_sym_res.type) {
             case FIP_SYM_UNKNOWN:
-                // nothing to copy
                 break;
             case FIP_SYM_FUNCTION: {
                 fip_clone_sig_fn(                                     //
@@ -2592,8 +2579,9 @@ fip_sig_list_t *fip_master_tag_request( //
                 break;
             }
             case FIP_SYM_ENUM: {
-                fip_clone_sig_enum(                                           //
-                    &last_sig->sig.enum_t, &incoming.u.tag_sym_res.sig.enum_t //
+                fip_clone_sig_enum( //
+                    &last_sig->sig.enum_t,
+                    &incoming.u.tag_sym_res.sig.enum_t //
                 );
                 break;
             }
@@ -2601,7 +2589,6 @@ fip_sig_list_t *fip_master_tag_request( //
         sig_list->count++;
         fip_free_msg(&incoming);
     }
-
     return sig_list;
 }
 
