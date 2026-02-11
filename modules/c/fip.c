@@ -964,11 +964,20 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
 
     fn_sig->args_len = num_args;
     if (num_args > 0) {
-        fn_sig->args = malloc(sizeof(fip_type_t) * num_args);
+        fn_sig->args = malloc(sizeof(fip_sig_fn_arg_t) * num_args);
         for (int i = 0; i < num_args; i++) {
             CXType arg_type = clang_getArgType(function_type, i);
             stack_clear(&stack);
-            if (!clang_type_to_fip_type(arg_type, &fn_sig->args[i])) {
+            CXCursor arg_cursor = clang_Cursor_getArgument(cursor, i);
+            CXString arg_name_str = clang_getCursorSpelling(arg_cursor);
+            const char *arg_name = clang_getCString(arg_name_str);
+            strncpy(                             //
+                fn_sig->args[i].name,            //
+                arg_name,                        //
+                sizeof(fn_sig->args[i].name) - 1 //
+            );
+            clang_disposeString(arg_name_str);
+            if (!clang_type_to_fip_type(arg_type, &fn_sig->args[i].type)) {
                 fip_print(                                          //
                     ID, FIP_WARN,                                   //
                     "Unsupported argument type %d for function %s", //
@@ -1267,9 +1276,10 @@ void handle_function_symbol_request(         //
                 sym_match = true;
                 // Now we need to check if the arg and ret types match
                 for (uint32_t k = 0; k < sym_fn->args_len; k++) {
-                    if (sym_fn->args[k].type != msg_fn->args[k].type ||
-                        sym_fn->args[k].is_mutable !=
-                            msg_fn->args[k].is_mutable) {
+                    if (sym_fn->args[k].type.type !=
+                            msg_fn->args[k].type.type ||
+                        sym_fn->args[k].type.is_mutable !=
+                            msg_fn->args[k].type.is_mutable) {
                         sym_match = false;
                     }
                 }

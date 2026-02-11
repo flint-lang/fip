@@ -266,12 +266,19 @@ typedef struct fip_type_t {
  * =================
  */
 
+/// @typedef `fip_sig_fn_arg_t`
+/// @brief Struct representing a single arugment of a FIP-defined function
+typedef struct {
+    char name[128];
+    fip_type_t type;
+} fip_sig_fn_arg_t;
+
 /// @typedef `fip_sig_fn_t`
 /// @brief Struct representing the signature of a FIP-defined function
 typedef struct {
     char name[128];
     uint8_t args_len;
-    fip_type_t *args;
+    fip_sig_fn_arg_t *args;
     uint8_t rets_len;
     fip_type_t *rets;
 } fip_sig_fn_t;
@@ -1221,8 +1228,12 @@ void fip_encode_sig_fn(        //
     // because which function has more than 256 parameters or return types?
     buffer[(*idx)++] = sig->args_len;
     for (uint8_t i = 0; i < sig->args_len; i++) {
-        buffer[(*idx)++] = sig->args[i].is_mutable;
-        fip_encode_type(buffer, idx, &sig->args[i]);
+        const uint8_t arg_name_len = strlen(sig->args[i].name);
+        buffer[(*idx)++] = arg_name_len;
+        memcpy(buffer + *idx, sig->args[i].name, arg_name_len);
+        *idx += arg_name_len;
+        buffer[(*idx)++] = sig->args[i].type.is_mutable;
+        fip_encode_type(buffer, idx, &sig->args[i].type);
     }
     buffer[(*idx)++] = sig->rets_len;
     for (uint8_t i = 0; i < sig->rets_len; i++) {
@@ -1486,10 +1497,14 @@ void fip_decode_sig_fn(              //
     // because which function has more than 256 parameters or return types?
     sig->args_len = buffer[(*idx)++];
     if (sig->args_len > 0) {
-        sig->args = (fip_type_t *)malloc(sizeof(fip_type_t) * sig->args_len);
+        sig->args = (fip_sig_fn_arg_t *)malloc(      //
+            sizeof(fip_sig_fn_arg_t) * sig->args_len //
+        );
         for (uint8_t i = 0; i < sig->args_len; i++) {
-            sig->args[i].is_mutable = buffer[(*idx)++];
-            fip_decode_type(buffer, idx, &sig->args[i]);
+            const uint8_t arg_name_len = buffer[(*idx)++];
+            memcpy(sig->args[i].name, buffer + *idx, arg_name_len);
+            sig->args[i].type.is_mutable = buffer[(*idx)++];
+            fip_decode_type(buffer, idx, &sig->args[i].type);
         }
     } else {
         sig->args = NULL;
@@ -1740,7 +1755,9 @@ void fip_free_msg(fip_msg_t *message) {
                     uint8_t args_len = message->u.sym_req.sig.fn.args_len;
                     if (args_len > 0) {
                         for (uint8_t i = 0; i < args_len; i++) {
-                            fip_free_type(&message->u.sym_req.sig.fn.args[i]);
+                            fip_free_type(                              //
+                                &message->u.sym_req.sig.fn.args[i].type //
+                            );
                         }
                         free(message->u.sym_req.sig.fn.args);
                     }
@@ -1776,7 +1793,9 @@ void fip_free_msg(fip_msg_t *message) {
                     uint8_t args_len = message->u.sym_res.sig.fn.args_len;
                     if (args_len > 0) {
                         for (uint8_t i = 0; i < args_len; i++) {
-                            fip_free_type(&message->u.sym_res.sig.fn.args[i]);
+                            fip_free_type(                              //
+                                &message->u.sym_res.sig.fn.args[i].type //
+                            );
                         }
                         free(message->u.sym_res.sig.fn.args);
                     }
@@ -2020,11 +2039,17 @@ void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig) {
     int idx = 0;
     for (uint32_t i = 0; i < sig->args_len; i++) {
         idx = 0;
-        fip_print_type(buffer, &idx, &sig->args[i]);
-        if (sig->args[i].is_mutable) {
-            fip_print(id, FIP_DEBUG, "    arg[%u]: mut %s", i, buffer);
+        fip_print_type(buffer, &idx, &sig->args[i].type);
+        if (sig->args[i].type.is_mutable) {
+            fip_print(                                   //
+                id, FIP_DEBUG, "    arg[%u]: mut %s %s", //
+                i, buffer, sig->args[i].name             //
+            );
         } else {
-            fip_print(id, FIP_DEBUG, "    arg[%u]: const %s", i, buffer);
+            fip_print(                                     //
+                id, FIP_DEBUG, "    arg[%u]: const %s %s", //
+                i, buffer, sig->args[i].name               //
+            );
         }
     }
     for (uint32_t i = 0; i < sig->rets_len; i++) {
@@ -2070,9 +2095,12 @@ void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
     memcpy(dest->name, src->name, sizeof(src->name));
     dest->args_len = src->args_len;
     if (src->args_len > 0) {
-        dest->args = (fip_type_t *)malloc(sizeof(fip_type_t) * src->args_len);
+        dest->args = (fip_sig_fn_arg_t *)malloc(     //
+            sizeof(fip_sig_fn_arg_t) * src->args_len //
+        );
         for (uint8_t i = 0; i < src->args_len; i++) {
-            fip_clone_type(&dest->args[i], &src->args[i]);
+            strcpy(dest->args[i].name, src->args[i].name);
+            fip_clone_type(&dest->args[i].type, &src->args[i].type);
         }
     }
     dest->rets_len = src->rets_len;
