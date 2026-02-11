@@ -85,7 +85,7 @@ extern int clock_gettime(clockid_t clk_id, struct timespec *tp);
 
 #define FIP_MAX_SLAVES 64
 #define FIP_MSG_SIZE 1024
-#define FIP_SLAVE_DELAY_MS 10
+#define FIP_SLAVE_DELAY_MS 1
 
 #ifdef __WIN32__
 #include <windows.h>

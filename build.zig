@@ -434,6 +434,7 @@ fn updateLLVM(b: *std.Build, llvm_version: []const u8) !*std.Build.Step.Run {
 fn makeEmptyStep(b: *std.Build) !*std.Build.Step.Run {
     const run_step = b.addSystemCommand(&[_][]const u8{ "zig", "version" });
     run_step.setName("make_empty_step");
+    _ = run_step.captureStdOut();
     return run_step;
 }
 
