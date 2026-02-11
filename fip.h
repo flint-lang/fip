@@ -1559,7 +1559,7 @@ void fip_decode_sig_enum(            //
 }
 
 void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
-    *message = (fip_msg_t){0};
+    memset(message, 0, sizeof(fip_msg_t));
     uint32_t idx = 0;
     message->type = (fip_msg_type_e)buffer[idx++];
     switch (message->type) {
@@ -2504,7 +2504,8 @@ fip_sig_list_t *fip_master_tag_request( //
     // the empty symbol.
     while (true) {
         // Send the next symbol request message to the slave
-        fip_msg_t request = (fip_msg_t){0};
+        fip_msg_t request;
+        memset(&request, 0, sizeof(fip_msg_t));
         request.type = FIP_MSG_TAG_NEXT_SYMBOL_REQUEST;
         fip_encode_msg(buffer, &request);
         uint32_t msg_len;
@@ -2562,7 +2563,7 @@ fip_sig_list_t *fip_master_tag_request( //
         );
         // Pointer to the freshly appended fip_sig_t
         fip_sig_t *const last_sig = &sig_list->sigs[sig_list->count];
-        *last_sig = (fip_sig_t){0};
+        memset(last_sig, 0, sizeof(fip_sig_t));
         // Store the symbol type
         last_sig->type = incoming.u.tag_sym_res.type;
         switch (incoming.u.tag_sym_res.type) {
