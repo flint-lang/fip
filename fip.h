@@ -1357,7 +1357,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             memcpy(buffer + idx, message->u.com_req.target.abi, 16);
             idx += 16;
             break;
-        case FIP_MSG_OBJECT_RESPONSE:
+        case FIP_MSG_OBJECT_RESPONSE: {
             // The sizes of the buffers are known so we can put them into the
             // buffer directly
             buffer[idx++] = message->u.obj_res.has_obj;
@@ -1371,6 +1371,7 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
             memcpy(buffer + idx, message->u.obj_res.paths, offset);
             idx += offset;
             break;
+        }
         case FIP_MSG_TAG_REQUEST: {
             const uint8_t tag_len = strlen(message->u.tag_req.tag);
             buffer[idx++] = tag_len;
