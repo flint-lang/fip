@@ -1547,7 +1547,7 @@ void fip_decode_sig_enum(            //
     sig->tags = (char **)malloc(sizeof(char *) * sig->value_count);
     for (uint8_t i = 0; i < sig->value_count; i++) {
         const uint8_t tag_len = buffer[(*idx)++];
-        sig->tags[i] = (char *)malloc(tag_len);
+        sig->tags[i] = (char *)malloc(tag_len + 1);
         memcpy(sig->tags[i], buffer + *idx, tag_len);
         sig->tags[i][tag_len] = '\0';
         *idx += tag_len;
@@ -2094,8 +2094,9 @@ void fip_clone_sig_data(fip_sig_data_t *dest, const fip_sig_data_t *src) {
         dest->value_names = (char **)malloc(names_size);
         for (uint8_t i = 0; i < src->value_count; i++) {
             const size_t name_len = strlen(src->value_names[i]);
-            dest->value_names[i] = (char *)malloc(name_len);
+            dest->value_names[i] = (char *)malloc(name_len + 1);
             memcpy(dest->value_names[i], src->value_names[i], name_len);
+            dest->value_names[i][name_len] = '\0';
         }
 
         const size_t types_size = sizeof(fip_type_t) * src->value_count;
@@ -2115,8 +2116,9 @@ void fip_clone_sig_enum(fip_sig_enum_t *dest, const fip_sig_enum_t *src) {
         dest->tags = (char **)malloc(tags_size);
         for (uint8_t i = 0; i < src->value_count; i++) {
             const size_t tag_len = strlen(src->tags[i]);
-            dest->tags[i] = (char *)malloc(tag_len);
+            dest->tags[i] = (char *)malloc(tag_len + 1);
             memcpy(dest->tags[i], src->tags[i], tag_len);
+            dest->tags[i][tag_len] = '\0';
         }
 
         const size_t values_size = sizeof(size_t) * src->value_count;
