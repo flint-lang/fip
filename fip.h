@@ -1071,11 +1071,15 @@ void fip_print_msg(uint32_t id, const fip_msg_t *message) {
                     break;
                 case FIP_SYM_DATA:
                     fip_print(id, FIP_DEBUG, "  .type: DATA");
-                    fip_print(id, FIP_DEBUG, "  .signature: TODO");
+                    fip_print(id, FIP_DEBUG, "  .signature: {");
+                    fip_print_sig_data(id, &message->u.sym_res.sig.data);
+                    fip_print(id, FIP_DEBUG, "  }");
                     break;
                 case FIP_SYM_ENUM:
                     fip_print(id, FIP_DEBUG, "  .type: ENUM");
-                    fip_print(id, FIP_DEBUG, "  .signature: TODO");
+                    fip_print(id, FIP_DEBUG, "  .signature: {");
+                    fip_print_sig_enum(id, &message->u.sym_res.sig.enum_t);
+                    fip_print(id, FIP_DEBUG, "  }");
                     break;
             }
             fip_print(id, FIP_DEBUG, "}");
