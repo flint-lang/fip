@@ -1197,8 +1197,10 @@ void fip_encode_type(          //
         case FIP_TYPE_STRUCT: {
             const uint8_t type_name_len = strlen(type->u.struct_t.name);
             buffer[(*idx)++] = type_name_len;
-            memcpy(buffer + *idx, type->u.struct_t.name, type_name_len);
-            *idx += type_name_len;
+            if (type_name_len > 0) {
+                memcpy(buffer + *idx, type->u.struct_t.name, type_name_len);
+                *idx += type_name_len;
+            }
             buffer[(*idx)++] = (char)type->u.struct_t.field_count;
             for (uint8_t i = 0; i < type->u.struct_t.field_count; i++) {
                 fip_encode_type(buffer, idx, &type->u.struct_t.fields[i]);
@@ -1211,8 +1213,10 @@ void fip_encode_type(          //
         case FIP_TYPE_ENUM: {
             const uint8_t type_name_len = strlen(type->u.enum_t.name);
             buffer[(*idx)++] = type_name_len;
-            memcpy(buffer + *idx, type->u.enum_t.name, type_name_len);
-            *idx += type_name_len;
+            if (type_name_len > 0) {
+                memcpy(buffer + *idx, type->u.enum_t.name, type_name_len);
+                *idx += type_name_len;
+            }
             buffer[(*idx)++] = (char)type->u.enum_t.bit_width;
             buffer[(*idx)++] = (char)type->u.enum_t.is_signed;
             buffer[(*idx)++] = (char)type->u.enum_t.value_count;
@@ -1234,8 +1238,10 @@ void fip_encode_sig_fn(        //
 ) {
     const uint8_t name_len = strlen(sig->name);
     buffer[(*idx)++] = name_len;
-    memcpy(buffer + *idx, sig->name, name_len);
-    *idx += name_len;
+    if (name_len > 0) {
+        memcpy(buffer + *idx, sig->name, name_len);
+        *idx += name_len;
+    }
     // Because each type is a simple char we can store them directly. But we
     // need to store first how many types there are. For that we store the
     // lengths directly in the buffer. The lengths are uint8_t's annyway
@@ -1244,8 +1250,10 @@ void fip_encode_sig_fn(        //
     for (uint8_t i = 0; i < sig->args_len; i++) {
         const uint8_t arg_name_len = strlen(sig->args[i].name);
         buffer[(*idx)++] = arg_name_len;
-        memcpy(buffer + *idx, sig->args[i].name, arg_name_len);
-        *idx += arg_name_len;
+        if (arg_name_len > 0) {
+            memcpy(buffer + *idx, sig->args[i].name, arg_name_len);
+            *idx += arg_name_len;
+        }
         buffer[(*idx)++] = sig->args[i].type.is_mutable;
         fip_encode_type(buffer, idx, &sig->args[i].type);
     }
@@ -1261,15 +1269,21 @@ void fip_encode_sig_data(      //
     uint32_t *idx,             //
     const fip_sig_data_t *sig  //
 ) {
-    memcpy(buffer + *idx, sig->name, sizeof(sig->name));
-    *idx += sizeof(sig->name);
+    const uint8_t name_len = strlen(sig->name);
+    buffer[(*idx)++] = name_len;
+    if (name_len > 0) {
+        memcpy(buffer + *idx, sig->name, name_len);
+        *idx += name_len;
+    }
     buffer[(*idx)++] = sig->value_count;
     // We store all value names first, then all value types
     for (uint8_t i = 0; i < sig->value_count; i++) {
-        const uint8_t name_len = (uint8_t)strlen(sig->value_names[i]);
-        buffer[(*idx)++] = name_len;
-        memcpy(buffer + *idx, sig->value_names[i], name_len);
-        *idx += name_len;
+        const uint8_t value_name_len = (uint8_t)strlen(sig->value_names[i]);
+        buffer[(*idx)++] = value_name_len;
+        if (value_name_len > 0) {
+            memcpy(buffer + *idx, sig->value_names[i], value_name_len);
+            *idx += value_name_len;
+        }
     }
     for (uint8_t i = 0; i < sig->value_count; i++) {
         fip_encode_type(buffer, idx, &sig->value_types[i]);
@@ -1283,16 +1297,20 @@ void fip_encode_sig_enum(      //
 ) {
     const size_t name_len = strlen(sig->name);
     buffer[(*idx)++] = (char)name_len;
-    memcpy(buffer + *idx, sig->name, name_len);
-    *idx += name_len;
+    if (name_len > 0) {
+        memcpy(buffer + *idx, sig->name, name_len);
+        *idx += name_len;
+    }
     buffer[(*idx)++] = sig->type;
     buffer[(*idx)++] = sig->value_count;
     // For enums we first store all tags to reduce padding needs
     for (uint8_t i = 0; i < sig->value_count; i++) {
         const uint8_t tag_len = strlen(sig->tags[i]);
         buffer[(*idx)++] = tag_len;
-        memcpy(buffer + *idx, sig->tags[i], tag_len);
-        *idx += tag_len;
+        if (tag_len > 0) {
+            memcpy(buffer + *idx, sig->tags[i], tag_len);
+            *idx += tag_len;
+        }
     }
     // And then we store all the values one after another
     for (uint8_t i = 0; i < sig->value_count; i++) {
@@ -1465,9 +1483,11 @@ void fip_decode_type(                //
             break;
         case FIP_TYPE_STRUCT: {
             const uint8_t type_name_len = buffer[(*idx)++];
-            memset(type->u.struct_t.name, 0, type_name_len);
-            memcpy(type->u.struct_t.name, buffer + *idx, type_name_len);
-            *idx += type_name_len;
+            memset(type->u.struct_t.name, 0, sizeof(type->u.struct_t.name));
+            if (type_name_len > 0) {
+                memcpy(type->u.struct_t.name, buffer + *idx, type_name_len);
+                *idx += type_name_len;
+            }
             type->u.struct_t.field_count = (uint8_t)buffer[(*idx)++];
             if (type->u.struct_t.field_count > 0) {
                 type->u.struct_t.fields = (fip_type_t *)malloc(       //
@@ -1484,9 +1504,11 @@ void fip_decode_type(                //
             break;
         case FIP_TYPE_ENUM: {
             const uint8_t type_name_len = buffer[(*idx)++];
-            memset(type->u.enum_t.name, 0, type_name_len);
-            memcpy(type->u.enum_t.name, buffer + *idx, type_name_len);
-            *idx += type_name_len;
+            memset(type->u.enum_t.name, 0, sizeof(type->u.enum_t.name));
+            if (type_name_len > 0) {
+                memcpy(type->u.enum_t.name, buffer + *idx, type_name_len);
+                *idx += type_name_len;
+            }
             type->u.enum_t.bit_width = buffer[(*idx)++];
             type->u.enum_t.is_signed = buffer[(*idx)++];
             const uint8_t value_count = buffer[(*idx)++];
@@ -1511,8 +1533,11 @@ void fip_decode_sig_fn(              //
     fip_sig_fn_t *sig                //
 ) {
     const uint8_t name_len = buffer[(*idx)++];
-    memcpy(sig->name, buffer + *idx, name_len);
-    *idx += name_len;
+    memset(sig->name, 0, sizeof(sig->name));
+    if (name_len > 0) {
+        memcpy(sig->name, buffer + *idx, name_len);
+        *idx += name_len;
+    }
     // Because each type is a simple char we can store them directly. But we
     // need to store first how many types there are. For that we store the
     // lengths directly in the buffer. The lengths are uint8_t's annyway
@@ -1525,8 +1550,10 @@ void fip_decode_sig_fn(              //
         for (uint8_t i = 0; i < sig->args_len; i++) {
             const uint8_t arg_name_len = buffer[(*idx)++];
             memset(sig->args[i].name, 0, sizeof(sig->args[i].name));
-            memcpy(sig->args[i].name, buffer + *idx, arg_name_len);
-            *idx += arg_name_len;
+            if (arg_name_len > 0) {
+                memcpy(sig->args[i].name, buffer + *idx, arg_name_len);
+                *idx += arg_name_len;
+            }
             sig->args[i].type.is_mutable = buffer[(*idx)++];
             fip_decode_type(buffer, idx, &sig->args[i].type);
         }
@@ -1550,17 +1577,23 @@ void fip_decode_sig_data(            //
     uint32_t *idx,                   //
     fip_sig_data_t *sig              //
 ) {
-    memcpy(sig->name, buffer + *idx, sizeof(sig->name));
-    *idx += sizeof(sig->name);
+    const uint8_t name_len = buffer[(*idx)++];
+    memset(sig->name, 0, sizeof(sig->name));
+    if (name_len > 0) {
+        memcpy(sig->name, buffer + *idx, name_len);
+        *idx += name_len;
+    }
     sig->value_count = buffer[(*idx)++];
     // We store all value names first, then all value types
     sig->value_names = (char **)malloc(sizeof(char *) * sig->value_count);
     for (uint8_t i = 0; i < sig->value_count; i++) {
-        const uint8_t name_len = buffer[(*idx)++];
-        sig->value_names[i] = (char *)malloc(name_len + 1);
-        memcpy(sig->value_names[i], buffer + *idx, name_len);
-        sig->value_names[i][name_len] = '\0';
-        *idx += name_len;
+        const uint8_t value_name_len = buffer[(*idx)++];
+        sig->value_names[i] = (char *)malloc(value_name_len + 1);
+        if (value_name_len > 0) {
+            memcpy(sig->value_names[i], buffer + *idx, value_name_len);
+            *idx += value_name_len;
+        }
+        sig->value_names[i][value_name_len] = '\0';
     }
     sig->value_types = (fip_type_t *)malloc(  //
         sizeof(fip_type_t) * sig->value_count //
@@ -1576,8 +1609,11 @@ void fip_decode_sig_enum(            //
     fip_sig_enum_t *sig              //
 ) {
     const uint8_t name_len = buffer[(*idx)++];
-    memcpy(sig->name, buffer + *idx, name_len);
-    *idx += name_len;
+    memset(sig->name, 0, sizeof(sig->name));
+    if (name_len > 0) {
+        memcpy(sig->name, buffer + *idx, name_len);
+        *idx += name_len;
+    }
     sig->type = (fip_type_prim_e)buffer[(*idx)++];
     sig->value_count = buffer[(*idx)++];
     // For enums we first stored all tags to reduce padding needs
@@ -1585,9 +1621,11 @@ void fip_decode_sig_enum(            //
     for (uint8_t i = 0; i < sig->value_count; i++) {
         const uint8_t tag_len = buffer[(*idx)++];
         sig->tags[i] = (char *)malloc(tag_len + 1);
-        memcpy(sig->tags[i], buffer + *idx, tag_len);
+        if (tag_len > 0) {
+            memcpy(sig->tags[i], buffer + *idx, tag_len);
+            *idx += tag_len;
+        }
         sig->tags[i][tag_len] = '\0';
-        *idx += tag_len;
     }
     // And then we store all the values one after another
     sig->values = (size_t *)malloc(sizeof(size_t) * sig->value_count);
@@ -1775,7 +1813,10 @@ void fip_free_msg(fip_msg_t *message) {
                     break;
                 case FIP_SYM_FUNCTION: {
                     message->u.sym_req.type = FIP_SYM_UNKNOWN;
-                    memset(message->u.sym_req.sig.fn.name, 0, 128);
+                    memset(                                    //
+                        message->u.sym_req.sig.fn.name, 0,     //
+                        sizeof(message->u.sym_req.sig.fn.name) //
+                    );
                     uint8_t args_len = message->u.sym_req.sig.fn.args_len;
                     if (args_len > 0) {
                         for (uint8_t i = 0; i < args_len; i++) {
@@ -1813,7 +1854,10 @@ void fip_free_msg(fip_msg_t *message) {
                     break;
                 case FIP_SYM_FUNCTION: {
                     message->u.sym_res.type = FIP_SYM_UNKNOWN;
-                    memset(message->u.sym_res.sig.fn.name, 0, 128);
+                    memset(                                    //
+                        message->u.sym_res.sig.fn.name, 0,     //
+                        sizeof(message->u.sym_res.sig.fn.name) //
+                    );
                     uint8_t args_len = message->u.sym_res.sig.fn.args_len;
                     if (args_len > 0) {
                         for (uint8_t i = 0; i < args_len; i++) {
@@ -1930,13 +1974,13 @@ void fip_create_hash(char hash[8], const char *file_path) {
     }
 }
 
-void fip_print_type(       //
-    char buffer[1024],     //
-    int *idx,              //
-    const fip_type_t *type //
+void fip_print_type(           //
+    char buffer[FIP_MSG_SIZE], //
+    int *idx,                  //
+    const fip_type_t *type     //
 ) {
     if (*idx == 0) {
-        memset(buffer, 0, 1024);
+        memset(buffer, 0, FIP_MSG_SIZE);
     }
     switch (type->type) {
         case FIP_TYPE_PRIMITIVE: {
@@ -2145,7 +2189,9 @@ void fip_clone_sig_data(fip_sig_data_t *dest, const fip_sig_data_t *src) {
         for (uint8_t i = 0; i < src->value_count; i++) {
             const size_t name_len = strlen(src->value_names[i]);
             dest->value_names[i] = (char *)malloc(name_len + 1);
-            memcpy(dest->value_names[i], src->value_names[i], name_len);
+            if (name_len > 0) {
+                memcpy(dest->value_names[i], src->value_names[i], name_len);
+            }
             dest->value_names[i][name_len] = '\0';
         }
 
@@ -2167,7 +2213,9 @@ void fip_clone_sig_enum(fip_sig_enum_t *dest, const fip_sig_enum_t *src) {
         for (uint8_t i = 0; i < src->value_count; i++) {
             const size_t tag_len = strlen(src->tags[i]);
             dest->tags[i] = (char *)malloc(tag_len + 1);
-            memcpy(dest->tags[i], src->tags[i], tag_len);
+            if (tag_len > 0) {
+                memcpy(dest->tags[i], src->tags[i], tag_len);
+            }
             dest->tags[i][tag_len] = '\0';
         }
 
@@ -2191,7 +2239,13 @@ void fip_clone_type(fip_type_t *dest, const fip_type_t *src) {
         case FIP_TYPE_STRUCT: {
             const uint8_t type_name_len = strlen(src->u.struct_t.name);
             memset(dest->u.struct_t.name, 0, sizeof(dest->u.struct_t.name));
-            memcpy(dest->u.struct_t.name, src->u.struct_t.name, type_name_len);
+            if (type_name_len > 0) {
+                memcpy(                    //
+                    dest->u.struct_t.name, //
+                    src->u.struct_t.name,  //
+                    type_name_len          //
+                );
+            }
             dest->u.struct_t.field_count = src->u.struct_t.field_count;
             if (src->u.struct_t.field_count > 0) {
                 dest->u.struct_t.fields = (fip_type_t *)malloc(      //
@@ -2212,7 +2266,9 @@ void fip_clone_type(fip_type_t *dest, const fip_type_t *src) {
         case FIP_TYPE_ENUM: {
             const uint8_t type_name_len = strlen(src->u.enum_t.name);
             memset(dest->u.enum_t.name, 0, sizeof(dest->u.enum_t.name));
-            memcpy(dest->u.enum_t.name, src->u.enum_t.name, type_name_len);
+            if (type_name_len > 0) {
+                memcpy(dest->u.enum_t.name, src->u.enum_t.name, type_name_len);
+            }
             dest->u.enum_t.bit_width = src->u.enum_t.bit_width;
             dest->u.enum_t.is_signed = src->u.enum_t.bit_width;
             dest->u.enum_t.value_count = src->u.enum_t.value_count;
