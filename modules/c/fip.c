@@ -786,6 +786,17 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             // Get the struct declaration cursor
             CXCursor type_cursor = clang_getTypeDeclaration(canonical);
 
+            // Extracting the type name
+            CXString struct_name = clang_getCursorSpelling(type_cursor);
+            const char *name_cstr = clang_getCString(struct_name);
+            const size_t name_len = strlen(name_cstr);
+            memset(                               //
+                fip_type->u.struct_t.name, 0,     //
+                sizeof(fip_type->u.struct_t.name) //
+            );
+            memcpy(fip_type->u.struct_t.name, name_cstr, name_len);
+            clang_disposeString(struct_name);
+
             // Count fields first
             int field_count = 0;
             clang_visitChildren(                                       //
@@ -836,6 +847,17 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             CXCursor type_cursor = clang_getTypeDeclaration(canonical);
             CXType integer_type = clang_getEnumDeclIntegerType(type_cursor);
             CXType canon_int = clang_getCanonicalType(integer_type);
+
+            // Extracting the type name
+            CXString enum_name = clang_getCursorSpelling(type_cursor);
+            const char *name_cstr = clang_getCString(enum_name);
+            const size_t name_len = strlen(name_cstr);
+            memset(                             //
+                fip_type->u.enum_t.name, 0,     //
+                sizeof(fip_type->u.enum_t.name) //
+            );
+            memcpy(fip_type->u.enum_t.name, name_cstr, name_len);
+            clang_disposeString(enum_name);
 
             // Determine is_signed
             uint8_t is_signed = 1;

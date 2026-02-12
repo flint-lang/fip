@@ -215,6 +215,7 @@ typedef struct {
 /// @typedef `fip_type_struct_t`
 /// @brief The struct representing a struct type
 typedef struct {
+    char name[128];
     uint8_t field_count;
     struct fip_type_t *fields;
 } fip_type_struct_t;
@@ -228,6 +229,7 @@ typedef struct {
 /// @typedef `fip_type_enum_t`
 /// @brief The struct representing enum types
 typedef struct {
+    char name[128];
     uint8_t bit_width;
     uint8_t is_signed;
     uint8_t value_count;
@@ -1192,16 +1194,25 @@ void fip_encode_type(          //
         case FIP_TYPE_PTR:
             fip_encode_type(buffer, idx, type->u.ptr.base_type);
             break;
-        case FIP_TYPE_STRUCT:
+        case FIP_TYPE_STRUCT: {
+            const uint8_t type_name_len = strlen(type->u.struct_t.name);
+            buffer[(*idx)++] = type_name_len;
+            memcpy(buffer + *idx, type->u.struct_t.name, type_name_len);
+            *idx += type_name_len;
             buffer[(*idx)++] = (char)type->u.struct_t.field_count;
             for (uint8_t i = 0; i < type->u.struct_t.field_count; i++) {
                 fip_encode_type(buffer, idx, &type->u.struct_t.fields[i]);
             }
             break;
+        }
         case FIP_TYPE_RECURSIVE:
             buffer[(*idx)++] = (char)type->u.recursive.levels_back;
             break;
-        case FIP_TYPE_ENUM:
+        case FIP_TYPE_ENUM: {
+            const uint8_t type_name_len = strlen(type->u.enum_t.name);
+            buffer[(*idx)++] = type_name_len;
+            memcpy(buffer + *idx, type->u.enum_t.name, type_name_len);
+            *idx += type_name_len;
             buffer[(*idx)++] = (char)type->u.enum_t.bit_width;
             buffer[(*idx)++] = (char)type->u.enum_t.is_signed;
             buffer[(*idx)++] = (char)type->u.enum_t.value_count;
@@ -1212,6 +1223,7 @@ void fip_encode_type(          //
                 *idx += 8;
             }
             break;
+        }
     }
 }
 
@@ -1451,7 +1463,11 @@ void fip_decode_type(                //
             type->u.ptr.base_type = (fip_type_t *)malloc(sizeof(fip_type_t));
             fip_decode_type(buffer, idx, type->u.ptr.base_type);
             break;
-        case FIP_TYPE_STRUCT:
+        case FIP_TYPE_STRUCT: {
+            const uint8_t type_name_len = buffer[(*idx)++];
+            memset(type->u.struct_t.name, 0, type_name_len);
+            memcpy(type->u.struct_t.name, buffer + *idx, type_name_len);
+            *idx += type_name_len;
             type->u.struct_t.field_count = (uint8_t)buffer[(*idx)++];
             if (type->u.struct_t.field_count > 0) {
                 type->u.struct_t.fields = (fip_type_t *)malloc(       //
@@ -1462,10 +1478,15 @@ void fip_decode_type(                //
                 }
             }
             break;
+        }
         case FIP_TYPE_RECURSIVE:
             type->u.recursive.levels_back = (uint8_t)buffer[(*idx)++];
             break;
         case FIP_TYPE_ENUM: {
+            const uint8_t type_name_len = buffer[(*idx)++];
+            memset(type->u.enum_t.name, 0, type_name_len);
+            memcpy(type->u.enum_t.name, buffer + *idx, type_name_len);
+            *idx += type_name_len;
             type->u.enum_t.bit_width = buffer[(*idx)++];
             type->u.enum_t.is_signed = buffer[(*idx)++];
             const uint8_t value_count = buffer[(*idx)++];
