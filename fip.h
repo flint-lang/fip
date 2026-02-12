@@ -1220,8 +1220,10 @@ void fip_encode_sig_fn(        //
     uint32_t *idx,             //
     const fip_sig_fn_t *sig    //
 ) {
-    memcpy(buffer + *idx, sig->name, sizeof(sig->name));
-    *idx += sizeof(sig->name);
+    const uint8_t name_len = strlen(sig->name);
+    buffer[(*idx)++] = name_len;
+    memcpy(buffer + *idx, sig->name, name_len);
+    *idx += name_len;
     // Because each type is a simple char we can store them directly. But we
     // need to store first how many types there are. For that we store the
     // lengths directly in the buffer. The lengths are uint8_t's annyway
@@ -1487,10 +1489,9 @@ void fip_decode_sig_fn(              //
     uint32_t *idx,                   //
     fip_sig_fn_t *sig                //
 ) {
-    // Because the name is a known size of 128 bytes we can store it directly in
-    // the signature
-    memcpy(sig->name, buffer + *idx, sizeof(sig->name));
-    *idx += sizeof(sig->name);
+    const uint8_t name_len = buffer[(*idx)++];
+    memcpy(sig->name, buffer + *idx, name_len);
+    *idx += name_len;
     // Because each type is a simple char we can store them directly. But we
     // need to store first how many types there are. For that we store the
     // lengths directly in the buffer. The lengths are uint8_t's annyway
@@ -1502,7 +1503,9 @@ void fip_decode_sig_fn(              //
         );
         for (uint8_t i = 0; i < sig->args_len; i++) {
             const uint8_t arg_name_len = buffer[(*idx)++];
+            memset(sig->args[i].name, 0, sizeof(sig->args[i].name));
             memcpy(sig->args[i].name, buffer + *idx, arg_name_len);
+            *idx += arg_name_len;
             sig->args[i].type.is_mutable = buffer[(*idx)++];
             fip_decode_type(buffer, idx, &sig->args[i].type);
         }

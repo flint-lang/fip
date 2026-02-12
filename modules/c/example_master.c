@@ -92,6 +92,23 @@ int main() {
     fip_sig_list_t *sig_list = fip_master_tag_request(msg_buf, &msg);
     fip_print(0, FIP_DEBUG, "sig_list(\"extern\").count = %lu",
         sig_list->count);
+    for (size_t i = 0; i < sig_list->count; i++) {
+        fip_print(0, FIP_DEBUG, "sig[%u]:", i);
+        switch (sig_list->sigs[i].type) {
+            case FIP_SYM_UNKNOWN:
+                fip_print(0, FIP_DEBUG, "UNKNOWN");
+                break;
+            case FIP_SYM_FUNCTION:
+                fip_print_sig_fn(0, &sig_list->sigs[i].sig.fn);
+                break;
+            case FIP_SYM_DATA:
+                fip_print_sig_data(0, &sig_list->sigs[i].sig.data);
+                break;
+            case FIP_SYM_ENUM:
+                fip_print_sig_enum(0, &sig_list->sigs[i].sig.enum_t);
+                break;
+        }
+    }
 
     // Broadcast the add function
     // extern def InitWindow(mut i32 width, mut i32 height, str title);
