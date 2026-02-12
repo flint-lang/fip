@@ -1662,8 +1662,14 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
                     fip_decode_sig_fn(buffer, &idx, &message->u.sym_req.sig.fn);
                     break;
                 case FIP_SYM_DATA:
+                    fip_decode_sig_data(                           //
+                        buffer, &idx, &message->u.sym_req.sig.data //
+                    );
                     break;
                 case FIP_SYM_ENUM:
+                    fip_decode_sig_enum(                             //
+                        buffer, &idx, &message->u.sym_req.sig.enum_t //
+                    );
                     break;
             }
             break;
