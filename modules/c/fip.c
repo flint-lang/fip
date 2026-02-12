@@ -1453,6 +1453,106 @@ void handle_function_symbol_request(         //
     sym_res->found = sym_match;
 }
 
+void handle_data_symbol_request(             //
+    const fip_msg_t *message,                //
+    fip_msg_symbol_response_t *const sym_res //
+) {
+    assert(message->u.sym_req.type == FIP_SYM_DATA);
+    const fip_sig_data_t *msg_data = &message->u.sym_req.sig.data;
+    sym_res->type = FIP_SYM_DATA;
+
+    bool sym_match = false;
+    fip_print(ID, FIP_DEBUG, "symbol_list.count=%lu", symbol_list.count);
+    for (size_t i = 0; i < symbol_list.count; i++) {
+        fip_c_symbol_collection_t *const collection =
+            &symbol_list.collection[i];
+        fip_print(ID, FIP_DEBUG, "collection->symbol_count=%lu",
+            collection->symbol_count);
+        for (size_t j = 0; j < collection->symbol_count; j++) {
+            const fip_c_symbol_t *symbol = &collection->symbols[j];
+            if (symbol->type != FIP_SYM_DATA) {
+                continue;
+            }
+            fip_print(ID, FIP_DEBUG, "Checking data");
+            const fip_sig_data_t *sym_data = &symbol->sig.data;
+            if (strcmp(sym_data->name, msg_data->name) == 0       //
+                && sym_data->value_count == msg_data->value_count //
+            ) {
+                sym_match = true;
+                // Check if field types match
+                for (uint32_t k = 0; k < sym_data->value_count; k++) {
+                    if (sym_data->value_types[k].type !=
+                            msg_data->value_types[k].type ||
+                        sym_data->value_types[k].is_mutable !=
+                            msg_data->value_types[k].is_mutable) {
+                        sym_match = false;
+                    }
+                }
+                if (sym_match) {
+                    // We found the requested symbol
+                    collection->needed = true;
+                    fip_clone_sig_data(&sym_res->sig.data, sym_data);
+                    memcpy(sym_res->sig.data.name, sym_data->name, 128);
+                    break;
+                }
+            }
+        }
+        if (sym_match) {
+            break;
+        }
+    }
+    sym_res->found = sym_match;
+}
+
+void handle_enum_symbol_request(             //
+    const fip_msg_t *message,                //
+    fip_msg_symbol_response_t *const sym_res //
+) {
+    assert(message->u.sym_req.type == FIP_SYM_ENUM);
+    const fip_sig_enum_t *msg_enum = &message->u.sym_req.sig.enum_t;
+    sym_res->type = FIP_SYM_ENUM;
+
+    bool sym_match = false;
+    fip_print(ID, FIP_DEBUG, "symbol_list.count=%lu", symbol_list.count);
+    for (size_t i = 0; i < symbol_list.count; i++) {
+        fip_c_symbol_collection_t *const collection =
+            &symbol_list.collection[i];
+        fip_print(ID, FIP_DEBUG, "collection->symbol_count=%lu",
+            collection->symbol_count);
+        for (size_t j = 0; j < collection->symbol_count; j++) {
+            const fip_c_symbol_t *symbol = &collection->symbols[j];
+            if (symbol->type != FIP_SYM_ENUM) {
+                continue;
+            }
+            fip_print(ID, FIP_DEBUG, "Checking enum");
+            const fip_sig_enum_t *sym_enum = &symbol->sig.enum_t;
+            if (strcmp(sym_enum->name, msg_enum->name) == 0       //
+                && sym_enum->type == msg_enum->type               //
+                && sym_enum->value_count == msg_enum->value_count //
+            ) {
+                sym_match = true;
+                // Check if values match
+                for (uint32_t k = 0; k < sym_enum->value_count; k++) {
+                    if (sym_enum->values[k] != msg_enum->values[k]) {
+                        sym_match = false;
+                    }
+                }
+                if (sym_match) {
+                    // We found the requested symbol
+                    collection->needed = true;
+                    fip_clone_sig_enum(&sym_res->sig.enum_t, sym_enum);
+                    memcpy(sym_res->sig.enum_t.name, sym_enum->name, 128);
+                    break;
+                }
+            }
+        }
+        if (sym_match) {
+            break;
+        }
+    }
+    sym_res->found = sym_match;
+}
+
 void handle_symbol_request(    //
     char buffer[FIP_MSG_SIZE], //
     const fip_msg_t *message   //
@@ -1475,11 +1575,11 @@ void handle_symbol_request(    //
             handle_function_symbol_request(message, sym_res);
             break;
         case FIP_SYM_DATA:
-            fip_print(ID, FIP_DEBUG, "Not implemented yet");
-            return;
+            handle_data_symbol_request(message, sym_res);
+            break;
         case FIP_SYM_ENUM:
-            fip_print(ID, FIP_DEBUG, "Not implemented yet");
-            return;
+            handle_enum_symbol_request(message, sym_res);
+            break;
     }
     fip_slave_send_message(ID, buffer, &response);
 }
