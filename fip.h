@@ -1066,7 +1066,7 @@ void fip_print_msg(uint32_t id, const fip_msg_t *message) {
                 case FIP_SYM_FUNCTION:
                     fip_print(id, FIP_DEBUG, "  .type: FUNCTION");
                     fip_print(id, FIP_DEBUG, "  .signature: {");
-                    fip_print_sig_fn(id, &message->u.sym_req.sig.fn);
+                    fip_print_sig_fn(id, &message->u.sym_res.sig.fn);
                     fip_print(id, FIP_DEBUG, "  }");
                     break;
                 case FIP_SYM_DATA:
