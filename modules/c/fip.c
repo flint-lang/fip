@@ -109,6 +109,12 @@ typedef struct {
 } field_visitor_data;
 
 typedef struct {
+    char **field_names;
+    int current_index;
+    uint32_t module_id;
+} field_name_visitor_data;
+
+typedef struct {
     size_t *values;
     int current_index;
     uint32_t module_id;
@@ -566,6 +572,28 @@ enum CXChildVisitResult count_struct_fields_visitor( //
 
 bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type);
 
+enum CXChildVisitResult struct_field_name_visitor( //
+    CXCursor cursor,                               //
+    [[maybe_unused]] CXCursor parent,              //
+    CXClientData client_data                       //
+) {
+    field_name_visitor_data *data = (field_name_visitor_data *)client_data;
+
+    if (clang_getCursorKind(cursor) == CXCursor_FieldDecl) {
+        CXString field_name = clang_getCursorSpelling(cursor);
+        const char *field_name_cstr = clang_getCString(field_name);
+        size_t name_len = strlen(field_name_cstr);
+
+        data->field_names[data->current_index] = (char *)malloc(name_len + 1);
+        strcpy(data->field_names[data->current_index], field_name_cstr);
+        clang_disposeString(field_name);
+
+        data->current_index++;
+    }
+
+    return CXChildVisit_Continue;
+}
+
 enum CXChildVisitResult struct_field_visitor( //
     CXCursor cursor,                          //
     [[maybe_unused]] CXCursor parent,         //
@@ -1018,6 +1046,71 @@ bool extract_function_signature(CXCursor cursor, fip_sig_fn_t *fn_sig) {
     return true;
 }
 
+bool extract_struct_signature(CXCursor cursor, fip_sig_data_t *data_sig) {
+    CXString cname = clang_getCursorSpelling(cursor);
+    const char *name_cstr = clang_getCString(cname);
+    if (strlen(name_cstr) == 0) {
+        clang_disposeString(cname);
+        return false;
+    }
+    strncpy(data_sig->name, name_cstr, sizeof(data_sig->name) - 1);
+    clang_disposeString(cname);
+
+    // Count fields first
+    int field_count = 0;
+    clang_visitChildren(cursor, count_struct_fields_visitor, &field_count);
+    if (field_count <= 0 || field_count > 255) {
+        fip_print(ID, FIP_WARN, "Invalid struct field count: %d", field_count);
+        return false;
+    }
+    data_sig->value_count = (uint8_t)field_count;
+
+    if (field_count > 0) {
+        data_sig->value_names = (char **)malloc(sizeof(char *) * field_count);
+        data_sig->value_types =
+            (fip_type_t *)malloc(sizeof(fip_type_t) * field_count);
+
+        // Extract field types
+        field_visitor_data type_visitor_data = {
+            .fields = data_sig->value_types,
+            .current_index = 0,
+            .module_id = ID,
+        };
+        clang_visitChildren(cursor, struct_field_visitor, &type_visitor_data);
+
+        // Extract field names
+        field_name_visitor_data name_visitor_data = {
+            .field_names = data_sig->value_names,
+            .current_index = 0,
+            .module_id = ID,
+        };
+        clang_visitChildren(cursor, struct_field_name_visitor,
+            &name_visitor_data);
+
+        // Verify we processed all fields
+        if (type_visitor_data.current_index != field_count ||
+            name_visitor_data.current_index != field_count) {
+            fip_print(ID, FIP_WARN,
+                "Processed %d types and %d names but expected %d",
+                type_visitor_data.current_index,
+                name_visitor_data.current_index, field_count);
+
+            // Clean up allocated memory
+            for (int i = 0; i < name_visitor_data.current_index; i++) {
+                free(data_sig->value_names[i]);
+            }
+            free(data_sig->value_names);
+            free(data_sig->value_types);
+            return false;
+        }
+    } else {
+        data_sig->value_names = NULL;
+        data_sig->value_types = NULL;
+    }
+
+    return true;
+}
+
 bool extract_enum_signature(CXCursor cursor, fip_sig_enum_t *enum_sig) {
     CXString cname = clang_getCursorSpelling(cursor);
     const char *name_cstr = clang_getCString(cname);
@@ -1174,6 +1267,38 @@ enum CXChildVisitResult visit_ast_node( //
                 );
                 fip_print_sig_fn(ID, &symbol.sig.fn);
 
+                curr_coll->symbol_count++;
+            }
+            break;
+        }
+        case CXCursor_StructDecl: {
+            if (!clang_isCursorDefinition(cursor)) {
+                return CXChildVisit_Continue;
+            }
+
+            if (curr_coll->symbol_count >= MAX_SYMBOLS) {
+                fip_print(                                                //
+                    ID, FIP_WARN,                                         //
+                    "Maximum symbols reached, skipping remaining structs" //
+                );
+                return CXChildVisit_Break;
+            }
+
+            // Extract struct information
+            fip_c_symbol_t symbol = {0};
+            strncpy(                                //
+                symbol.source_file_path, file_path, //
+                sizeof(symbol.source_file_path) - 1 //
+            );
+            symbol.line_number = (int)line;
+            symbol.type = FIP_SYM_DATA;
+
+            if (extract_struct_signature(cursor, &symbol.sig.data)) {
+                curr_coll->symbols[curr_coll->symbol_count] = symbol;
+                fip_print(                                         //
+                    ID, FIP_INFO, "Found struct: '%s' at line %d", //
+                    symbol.sig.data.name, symbol.line_number       //
+                );
                 curr_coll->symbol_count++;
             }
             break;
