@@ -2188,7 +2188,10 @@ void fip_clone_type(fip_type_t *dest, const fip_type_t *src) {
             dest->u.ptr.base_type = (fip_type_t *)malloc(sizeof(fip_type_t));
             fip_clone_type(dest->u.ptr.base_type, src->u.ptr.base_type);
             break;
-        case FIP_TYPE_STRUCT:
+        case FIP_TYPE_STRUCT: {
+            const uint8_t type_name_len = strlen(src->u.struct_t.name);
+            memset(dest->u.struct_t.name, 0, sizeof(dest->u.struct_t.name));
+            memcpy(dest->u.struct_t.name, src->u.struct_t.name, type_name_len);
             dest->u.struct_t.field_count = src->u.struct_t.field_count;
             if (src->u.struct_t.field_count > 0) {
                 dest->u.struct_t.fields = (fip_type_t *)malloc(      //
@@ -2202,10 +2205,14 @@ void fip_clone_type(fip_type_t *dest, const fip_type_t *src) {
                 }
             }
             break;
+        }
         case FIP_TYPE_RECURSIVE:
             dest->u.recursive.levels_back = src->u.recursive.levels_back;
             break;
-        case FIP_TYPE_ENUM:
+        case FIP_TYPE_ENUM: {
+            const uint8_t type_name_len = strlen(src->u.enum_t.name);
+            memset(dest->u.enum_t.name, 0, sizeof(dest->u.enum_t.name));
+            memcpy(dest->u.enum_t.name, src->u.enum_t.name, type_name_len);
             dest->u.enum_t.bit_width = src->u.enum_t.bit_width;
             dest->u.enum_t.is_signed = src->u.enum_t.bit_width;
             dest->u.enum_t.value_count = src->u.enum_t.value_count;
@@ -2216,6 +2223,7 @@ void fip_clone_type(fip_type_t *dest, const fip_type_t *src) {
                 memcpy(dest->u.enum_t.values, src->u.enum_t.values, val_size);
             }
             break;
+        }
     }
 }
 
