@@ -492,6 +492,12 @@ void fip_free_type(fip_type_t *type);
 /// @param `message` The message to free
 void fip_free_msg(fip_msg_t *message);
 
+/// @function `fip_free_sig_list`
+/// @brief Frees a given signature list
+///
+/// @param `list` The list to free
+void fip_free_sig_list(fip_sig_list_t *list);
+
 /// @function `fip_create_hash`
 /// @brief Creates a 8 Byte character hash from the given file path to make
 /// differentiating between different files predictable in size. Each character
@@ -1962,6 +1968,68 @@ void fip_free_msg(fip_msg_t *message) {
         case FIP_MSG_KILL:
             // The enum does not need to be changed at all
             break;
+    }
+}
+
+void fip_free_sig_list(fip_sig_list_t *list) {
+    if (list == NULL) {
+        return;
+    }
+    for (size_t i = 0; i < list->count; i++) {
+        switch (list->sigs[i].type) {
+            case FIP_SYM_UNKNOWN:
+                break;
+            case FIP_SYM_FUNCTION: {
+                fip_sig_fn_t *f = &list->sigs[i].sig.fn;
+                memset(f->name, 0, sizeof(f->name));
+                if (f->args_len > 0) {
+                    for (uint8_t j = 0; j < f->args_len; j++) {
+                        fip_free_type(&f->args[j].type);
+                    }
+                    free(f->args);
+                }
+                f->args = NULL;
+                if (f->rets_len > 0) {
+                    for (uint8_t j = 0; j < f->rets_len; j++) {
+                        fip_free_type(&f->rets[j]);
+                    }
+                    free(f->rets);
+                }
+                f->rets = NULL;
+                break;
+            }
+            case FIP_SYM_DATA: {
+                fip_sig_data_t *d = &list->sigs[i].sig.data;
+                memset(d->name, 0, sizeof(d->name));
+                if (d->value_count > 0) {
+                    for (uint8_t j = 0; j < d->value_count; j++) {
+                        free(d->value_names[j]);
+                        fip_free_type(&d->value_types[j]);
+                    }
+                    free(d->value_names);
+                    free(d->value_types);
+                }
+                d->value_names = NULL;
+                d->value_types = NULL;
+                break;
+            }
+            case FIP_SYM_ENUM: {
+                fip_sig_enum_t *e = &list->sigs[i].sig.enum_t;
+                memset(e->name, 0, sizeof(e->name));
+                e->type = FIP_VOID;
+                if (e->value_count > 0) {
+                    for (uint8_t j = 0; j < e->value_count; j++) {
+                        free(e->tags[j]);
+                    }
+                    free(e->tags);
+                    free(e->values);
+                }
+                e->value_count = 0;
+                e->values = NULL;
+                e->tags = NULL;
+                break;
+            }
+        }
     }
 }
 

@@ -126,6 +126,7 @@ int main() {
             fip_print(0, FIP_ERROR, "ERR_WRITE");
             break;
     }
+    fip_free_sig_list(sig_list.list);
 
     // Broadcast the add function
     // extern def add(mut i32* lhs, mut i32 rhs);
