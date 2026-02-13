@@ -633,6 +633,25 @@ typedef struct {
     uint32_t response_count;
 } fip_master_state_t;
 
+/// @typedef `fip_tag_request_status_e`
+/// @brief A simple enum desciring the exit code of the `fip_master_tag_request`
+/// function
+typedef enum fip_tag_request_status_e : uint8_t {
+    FIP_TAG_REQUEST_STATUS_OK,
+    FIP_TAG_REQUEST_STATUS_ERR_FAULTY,
+    FIP_TAG_REQUEST_STATUS_ERR_UNKNOWN_TAG,
+    FIP_TAG_REQUEST_STATUS_ERR_AMBIGUOUS_TAG,
+    FIP_TAG_REQUEST_STATUS_ERR_WRITE,
+} fip_tag_request_status_e;
+
+/// @typedef `fip_tag_request_result_t`
+/// @brief A structure containing the result type of the
+/// `fip_master_tag_request` function being an exit status and a list of symbols
+typedef struct {
+    fip_tag_request_status_e status;
+    fip_sig_list_t *list;
+} fip_tag_request_result_t;
+
 /// @typedef `fip_master_config`
 /// @brief The structure containing the results of the parsed toml file
 typedef struct {
@@ -763,9 +782,9 @@ bool fip_master_compile_request( //
 /// @return `fip_sig_list_t *` A list of all collected signatures from the tag
 ///
 /// @note This function asserts the message type to be FIP_MSG_TAG_REQUEST
-fip_sig_list_t *fip_master_tag_request( //
-    char buffer[FIP_MSG_SIZE],          //
-    const fip_msg_t *message            //
+fip_tag_request_result_t fip_master_tag_request( //
+    char buffer[FIP_MSG_SIZE],                   //
+    const fip_msg_t *message                     //
 );
 
 /// @function `fip_master_cleanup`
@@ -2576,9 +2595,9 @@ bool fip_master_compile_request( //
     return true;
 }
 
-fip_sig_list_t *fip_master_tag_request( //
-    char buffer[FIP_MSG_SIZE],          //
-    const fip_msg_t *message            //
+fip_tag_request_result_t fip_master_tag_request( //
+    char buffer[FIP_MSG_SIZE],                   //
+    const fip_msg_t *message                     //
 ) {
     assert(message->type == FIP_MSG_TAG_REQUEST);
     fip_master_broadcast_message(buffer, message);
@@ -2590,7 +2609,11 @@ fip_sig_list_t *fip_master_tag_request( //
         FIP_MSG_TAG_PRESENT_RESPONSE                      //
     );
     if (wrong_msg_count > 0) {
-        fip_print(0, FIP_WARN, "Received %u faulty messages", wrong_msg_count);
+        fip_print(0, FIP_ERROR, "Received %u faulty messages", wrong_msg_count);
+        return (fip_tag_request_result_t){
+            .status = FIP_TAG_REQUEST_STATUS_ERR_FAULTY,
+            .list = NULL,
+        };
     }
 
     uint8_t module_with_tag_count = 0;
@@ -2603,19 +2626,22 @@ fip_sig_list_t *fip_master_tag_request( //
         }
     }
 
-    // Create an empty list which is returned in case of errors
-    fip_sig_list_t *sig_list = (fip_sig_list_t *)malloc(sizeof(fip_sig_list_t));
-    sig_list->count = 0;
     if (module_with_tag_count == 0) {
         fip_print(0, FIP_INFO, "No module owns tag %s", message->u.tag_req.tag);
-        return sig_list;
+        return (fip_tag_request_result_t){
+            .status = FIP_TAG_REQUEST_STATUS_ERR_UNKNOWN_TAG,
+            .list = NULL,
+        };
     }
     if (module_with_tag_count > 1) {
         fip_print(                                              //
             0, FIP_ERROR, "Tag %s present in more than one IM", //
             message->u.tag_req.tag                              //
         );
-        return sig_list;
+        return (fip_tag_request_result_t){
+            .status = FIP_TAG_REQUEST_STATUS_ERR_AMBIGUOUS_TAG,
+            .list = NULL,
+        };
     }
 
     // Get the stdout and stdin of the slave we got the tag id from
@@ -2628,6 +2654,8 @@ fip_sig_list_t *fip_master_tag_request( //
     // the symbol is empty, indicating the end of the list. We first tell the
     // slave to "give" us the next message, then it sends the message contianing
     // the empty symbol.
+    fip_sig_list_t *sig_list = (fip_sig_list_t *)malloc(sizeof(fip_sig_list_t));
+    sig_list->count = 0;
     while (true) {
         // Send the next symbol request message to the slave
         fip_msg_t request;
@@ -2639,7 +2667,10 @@ fip_sig_list_t *fip_master_tag_request( //
         size_t written_bytes = fwrite(buffer, 1, msg_len + 4, slave_in);
         if (written_bytes != msg_len + 4) {
             fip_print(0, FIP_ERROR, "Failed to write message to slave");
-            return sig_list;
+            return (fip_tag_request_result_t){
+                .status = FIP_TAG_REQUEST_STATUS_ERR_WRITE,
+                .list = sig_list,
+            };
         }
         fflush(slave_in);
 
@@ -2718,7 +2749,10 @@ fip_sig_list_t *fip_master_tag_request( //
         sig_list->count++;
         fip_free_msg(&incoming);
     }
-    return sig_list;
+    return (fip_tag_request_result_t){
+        .status = FIP_TAG_REQUEST_STATUS_OK,
+        .list = sig_list,
+    };
 }
 
 void fip_master_cleanup() {

@@ -87,64 +87,81 @@ int main() {
     fip_msg_t msg = {0};
 
     // Send the tag request message to all connected interop modules
-    // msg.type = FIP_MSG_TAG_REQUEST;
-    // strcpy(msg.u.tag_req.tag, "extern");
-    // fip_sig_list_t *sig_list = fip_master_tag_request(msg_buf, &msg);
-    // fip_print(0, FIP_DEBUG, "sig_list(\"extern\").count = %lu",
-    //     sig_list->count);
-    // for (size_t i = 0; i < sig_list->count; i++) {
-    //     fip_print(0, FIP_DEBUG, "sig[%u]:", i);
-    //     switch (sig_list->sigs[i].type) {
-    //         case FIP_SYM_UNKNOWN:
-    //             fip_print(0, FIP_DEBUG, "UNKNOWN");
-    //             break;
-    //         case FIP_SYM_FUNCTION:
-    //             fip_print_sig_fn(0, &sig_list->sigs[i].sig.fn);
-    //             break;
-    //         case FIP_SYM_DATA:
-    //             fip_print_sig_data(0, &sig_list->sigs[i].sig.data);
-    //             break;
-    //         case FIP_SYM_ENUM:
-    //             fip_print_sig_enum(0, &sig_list->sigs[i].sig.enum_t);
-    //             break;
-    //     }
-    // }
+    msg.type = FIP_MSG_TAG_REQUEST;
+    strcpy(msg.u.tag_req.tag, "ext");
+    fip_tag_request_result_t sig_list = fip_master_tag_request(msg_buf, &msg);
+    switch (sig_list.status) {
+        case FIP_TAG_REQUEST_STATUS_OK:
+            fip_print(0, FIP_DEBUG, "sig_list(\"extern\").count = %lu",
+                sig_list.list->count);
+            for (size_t i = 0; i < sig_list.list->count; i++) {
+                fip_print(0, FIP_DEBUG, "sig[%u]:", i);
+                switch (sig_list.list->sigs[i].type) {
+                    case FIP_SYM_UNKNOWN:
+                        fip_print(0, FIP_DEBUG, "UNKNOWN");
+                        break;
+                    case FIP_SYM_FUNCTION:
+                        fip_print_sig_fn(0, &sig_list.list->sigs[i].sig.fn);
+                        break;
+                    case FIP_SYM_DATA:
+                        fip_print_sig_data(0, &sig_list.list->sigs[i].sig.data);
+                        break;
+                    case FIP_SYM_ENUM:
+                        fip_print_sig_enum(0,
+                            &sig_list.list->sigs[i].sig.enum_t);
+                        break;
+                }
+            }
+            break;
+        case FIP_TAG_REQUEST_STATUS_ERR_FAULTY:
+            fip_print(0, FIP_ERROR, "ERR_FAULTY");
+            break;
+        case FIP_TAG_REQUEST_STATUS_ERR_UNKNOWN_TAG:
+            fip_print(0, FIP_ERROR, "ERR_UNKNOWN_TAG");
+            break;
+        case FIP_TAG_REQUEST_STATUS_ERR_AMBIGUOUS_TAG:
+            fip_print(0, FIP_ERROR, "ERR_AMBIGUOUS_TAG");
+            break;
+        case FIP_TAG_REQUEST_STATUS_ERR_WRITE:
+            fip_print(0, FIP_ERROR, "ERR_WRITE");
+            break;
+    }
 
     // Broadcast the add function
-    // extern def InitWindow(mut i32 width, mut i32 height, str title);
-    msg.type = FIP_MSG_SYMBOL_REQUEST;
-    msg.u.sym_req.type = FIP_SYM_FUNCTION;
-    strcpy(msg.u.sym_req.sig.fn.name, "add");
-    msg.u.sym_req.sig.fn.rets_len = 0;
-    msg.u.sym_req.sig.fn.rets = NULL;
-
-    msg.u.sym_req.sig.fn.args_len = 2;
-    msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_sig_fn_arg_t) * 2);
-
-    memset(msg.u.sym_req.sig.fn.args[0].name, 0,
-        sizeof(msg.u.sym_req.sig.fn.args[0].name));
-    msg.u.sym_req.sig.fn.args[0].type.type = FIP_TYPE_PTR;
-    msg.u.sym_req.sig.fn.args[0].type.is_mutable = true;
-    msg.u.sym_req.sig.fn.args[0].type.u.ptr.base_type =
-        malloc(sizeof(fip_type_t));
-    msg.u.sym_req.sig.fn.args[0].type.u.ptr.base_type->type =
-        FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.args[0].type.u.ptr.base_type->is_mutable = false;
-    msg.u.sym_req.sig.fn.args[0].type.u.ptr.base_type->u.prim = FIP_I32;
-
-    memset(msg.u.sym_req.sig.fn.args[1].name, 0,
-        sizeof(msg.u.sym_req.sig.fn.args[1].name));
-    msg.u.sym_req.sig.fn.args[1].type.type = FIP_TYPE_PRIMITIVE;
-    msg.u.sym_req.sig.fn.args[1].type.is_mutable = true;
-    msg.u.sym_req.sig.fn.args[1].type.u.prim = FIP_I32;
-
-    msg.u.sym_req.sig.fn.rets_len = 0;
-    msg.u.sym_req.sig.fn.rets = NULL;
-
-    if (!fip_master_symbol_request(msg_buf, &msg)) {
-        fip_print(0, FIP_INFO, "Goto kill");
-        goto kill;
-    }
+    // extern def add(mut i32* lhs, mut i32 rhs);
+    // msg.type = FIP_MSG_SYMBOL_REQUEST;
+    // msg.u.sym_req.type = FIP_SYM_FUNCTION;
+    // strcpy(msg.u.sym_req.sig.fn.name, "add");
+    // msg.u.sym_req.sig.fn.rets_len = 0;
+    // msg.u.sym_req.sig.fn.rets = NULL;
+    //
+    // msg.u.sym_req.sig.fn.args_len = 2;
+    // msg.u.sym_req.sig.fn.args = malloc(sizeof(fip_sig_fn_arg_t) * 2);
+    //
+    // memset(msg.u.sym_req.sig.fn.args[0].name, 0,
+    //     sizeof(msg.u.sym_req.sig.fn.args[0].name));
+    // msg.u.sym_req.sig.fn.args[0].type.type = FIP_TYPE_PTR;
+    // msg.u.sym_req.sig.fn.args[0].type.is_mutable = true;
+    // msg.u.sym_req.sig.fn.args[0].type.u.ptr.base_type =
+    //     malloc(sizeof(fip_type_t));
+    // msg.u.sym_req.sig.fn.args[0].type.u.ptr.base_type->type =
+    //     FIP_TYPE_PRIMITIVE;
+    // msg.u.sym_req.sig.fn.args[0].type.u.ptr.base_type->is_mutable = false;
+    // msg.u.sym_req.sig.fn.args[0].type.u.ptr.base_type->u.prim = FIP_I32;
+    //
+    // memset(msg.u.sym_req.sig.fn.args[1].name, 0,
+    //     sizeof(msg.u.sym_req.sig.fn.args[1].name));
+    // msg.u.sym_req.sig.fn.args[1].type.type = FIP_TYPE_PRIMITIVE;
+    // msg.u.sym_req.sig.fn.args[1].type.is_mutable = true;
+    // msg.u.sym_req.sig.fn.args[1].type.u.prim = FIP_I32;
+    //
+    // msg.u.sym_req.sig.fn.rets_len = 0;
+    // msg.u.sym_req.sig.fn.rets = NULL;
+    //
+    // if (!fip_master_symbol_request(msg_buf, &msg)) {
+    //     fip_print(0, FIP_INFO, "Goto kill");
+    //     goto kill;
+    // }
 
     // If we came here all definitions have been found in one of the interop
     // modules. This means that we now can request all modules to compile their
