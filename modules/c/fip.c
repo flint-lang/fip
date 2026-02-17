@@ -1922,14 +1922,14 @@ send:
         for (size_t j = 0; j < config->headers_len; j++) {
             fip_print(ID, FIP_DEBUG, "headers[%lu]: %s", j, config->headers[j]);
             fip_print(                                                      //
-                ID, FIP_DEBUG, "parsing header '%s'...", config->headers[i] //
+                ID, FIP_DEBUG, "parsing header '%s'...", config->headers[j] //
             );
             clock_t start = clock();
-            parse_c_file(config->headers[i]);
+            parse_c_file(config->headers[j]);
             clock_t end = clock();
             double parse_time = ((double)(end - start)) / CLOCKS_PER_SEC;
             fip_print(ID, FIP_DEBUG, "parsing '%s' took %f s",
-                config->headers[i], parse_time);
+                config->headers[j], parse_time);
         }
         for (size_t j = 0; j < config->command_len; j++) {
             fip_print(ID, FIP_DEBUG, "command[%lu]: %s", j, config->command[j]);
