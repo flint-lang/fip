@@ -84,7 +84,7 @@ extern int clock_gettime(clockid_t clk_id, struct timespec *tp);
 #endif
 
 #define FIP_MAX_SLAVES 64
-#define FIP_MSG_SIZE 1024
+#define FIP_MSG_SIZE 4096
 #define FIP_SLAVE_DELAY_MS 1
 
 #ifdef __WIN32__
@@ -546,10 +546,10 @@ fip_sig_fn_t fip_parse_fn_signature(uint32_t id, const char *signature);
 /// @param `buffer` The buffer in which the type string will be stored in
 /// @param `idx` The current index in the buffer, the "write pointer"
 /// @param `type` The type to print into the buffer
-void fip_print_type(       //
-    char buffer[1024],     //
-    int *idx,              //
-    const fip_type_t *type //
+void fip_print_type(           //
+    char buffer[FIP_MSG_SIZE], //
+    int *idx,                  //
+    const fip_type_t *type     //
 );
 
 /// @function `fip_print_sig_fn`
@@ -2200,7 +2200,7 @@ void fip_print_type(           //
 void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig) {
     fip_print(id, FIP_DEBUG, "  Function Signature:");
     fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
-    char buffer[1024] = {0};
+    char buffer[FIP_MSG_SIZE] = {0};
     int idx = 0;
     for (uint32_t i = 0; i < sig->args_len; i++) {
         idx = 0;
@@ -2231,7 +2231,7 @@ void fip_print_sig_fn(uint32_t id, const fip_sig_fn_t *sig) {
 void fip_print_sig_data(uint32_t id, const fip_sig_data_t *sig) {
     fip_print(id, FIP_DEBUG, "  Data Signature:");
     fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
-    char buffer[1024] = {0};
+    char buffer[FIP_MSG_SIZE] = {0};
     int idx = 0;
     for (uint32_t i = 0; i < sig->value_count; i++) {
         idx = 0;
