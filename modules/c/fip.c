@@ -1758,21 +1758,23 @@ void handle_tag_request(       //
     fip_c_symbol_collection_t *const coll = &symbol_list.collection[coll_id];
     coll->needed = true;
     for (size_t i = 0; i < coll->symbol_count; i++) {
+        fip_print(ID, FIP_INFO, "Sending symbol %u/%u", i, coll->symbol_count);
         // Wait for master to request the next symbol
-        if (fip_slave_receive_message(buffer)) {
-            fip_msg_t next_message = {0};
-            fip_decode_msg(buffer, &next_message);
-            switch (next_message.type) {
-                default:
-                    fip_print(ID, FIP_ERROR,
-                        "Unexpected message from master: %s, expected %s",
-                        fip_msg_type_str[next_message.type],
-                        fip_msg_type_str[FIP_MSG_TAG_NEXT_SYMBOL_REQUEST]);
-                    fip_free_msg(&next_message);
-                    return;
-                case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
-                    break;
-            }
+        while (!fip_slave_receive_message(buffer)) {
+            fip_print(ID, FIP_WARN, "No message from master yet...");
+        }
+        fip_msg_t next_message = {0};
+        fip_decode_msg(buffer, &next_message);
+        switch (next_message.type) {
+            default:
+                fip_print(ID, FIP_ERROR,
+                    "Unexpected message from master: %s, expected %s",
+                    fip_msg_type_str[next_message.type],
+                    fip_msg_type_str[FIP_MSG_TAG_NEXT_SYMBOL_REQUEST]);
+                fip_free_msg(&next_message);
+                return;
+            case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
+                break;
         }
         fip_c_symbol_t *const sym = &coll->symbols[i];
         response = (fip_msg_t){0};
@@ -1807,21 +1809,22 @@ void handle_tag_request(       //
     }
     // Wait for master to request the next symbol before sending the empty
     // symbol to it
-    if (fip_slave_receive_message(buffer)) {
-        // Only print the first time we receive a message
-        fip_msg_t next_message = {0};
-        fip_decode_msg(buffer, &next_message);
-        switch (next_message.type) {
-            default:
-                fip_print(ID, FIP_ERROR,
-                    "Unexpected message from master: %s, expected %s",
-                    fip_msg_type_str[next_message.type],
-                    fip_msg_type_str[FIP_MSG_TAG_NEXT_SYMBOL_REQUEST]);
-                fip_free_msg(&next_message);
-                return;
-            case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
-                break;
-        }
+    while (!fip_slave_receive_message(buffer)) {
+        fip_print(ID, FIP_WARN, "No message from master yet...");
+    }
+    // Only print the first time we receive a message
+    fip_msg_t next_message = {0};
+    fip_decode_msg(buffer, &next_message);
+    switch (next_message.type) {
+        default:
+            fip_print(ID, FIP_ERROR,
+                "Unexpected message from master: %s, expected %s",
+                fip_msg_type_str[next_message.type],
+                fip_msg_type_str[FIP_MSG_TAG_NEXT_SYMBOL_REQUEST]);
+            fip_free_msg(&next_message);
+            return;
+        case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
+            break;
     }
     // Send "end of list" message
     response = (fip_msg_t){0};

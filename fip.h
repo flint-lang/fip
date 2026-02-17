@@ -2714,7 +2714,6 @@ fip_tag_request_result_t fip_master_tag_request( //
 
     // Get the stdout and stdin of the slave we got the tag id from
     uint8_t slave_index = module_with_tag_id;
-    FILE *slave_out = master_state.slave_stdout[module_with_tag_id];
     FILE *slave_in = master_state.slave_stdin[module_with_tag_id];
 
     // We keep sending `FIP_MSG_TAG_NEXT_SYMBOL_REQUEST` to the slave and we
@@ -2744,22 +2743,10 @@ fip_tag_request_result_t fip_master_tag_request( //
 
         // Wait for the response of the slave
         // Simple timeout using non-blocking read
-        if (fread(&msg_len, 1, 4, slave_out) != 4) {
-            fip_print(0, FIP_WARN,
-                "Failed to read message length from slave %d", slave_index + 1);
-            continue;
-        }
-        if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
-            fip_print(0, FIP_WARN, "Invalid message length from slave %d: %u",
-                slave_index + 1, msg_len);
-            continue;
-        }
-        memset(buffer, 0, FIP_MSG_SIZE);
-        if (fread(buffer, 1, msg_len, slave_out) != msg_len) {
-            fip_print(0, FIP_WARN,
-                "Failed to read complete message from slave %d",
-                slave_index + 1);
-            continue;
+        while (!fip_master_receive_message_from(module_with_tag_id, buffer)) {
+            fip_print_slave_streams();
+            fip_print(0, FIP_WARN, "No message from slave %u yet...",
+                module_with_tag_id);
         }
         fip_print_slave_streams();
 
