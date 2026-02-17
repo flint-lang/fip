@@ -558,6 +558,29 @@ fail:
  * ==============================================
  */
 
+static bool symbol_name_exists(const char *name) {
+    if (strlen(name) == 0) {
+        return false;
+    }
+    for (size_t i = 0; i < curr_coll->symbol_count; i++) {
+        const char *existing_name = NULL;
+        switch (curr_coll->symbols[i].type) {
+            case FIP_SYM_DATA:
+                existing_name = curr_coll->symbols[i].sig.data.name;
+                break;
+            case FIP_SYM_ENUM:
+                existing_name = curr_coll->symbols[i].sig.enum_t.name;
+                break;
+            default:
+                continue;
+        }
+        if (strcmp(existing_name, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 enum CXChildVisitResult count_struct_fields_visitor( //
     CXCursor cursor,                                 //
     [[maybe_unused]] CXCursor parent,                //
@@ -1293,7 +1316,9 @@ enum CXChildVisitResult visit_ast_node( //
             symbol.line_number = (int)line;
             symbol.type = FIP_SYM_DATA;
 
-            if (extract_struct_signature(cursor, &symbol.sig.data)) {
+            if (extract_struct_signature(cursor, &symbol.sig.data) //
+                && !symbol_name_exists(symbol.sig.data.name)       //
+            ) {
                 curr_coll->symbols[curr_coll->symbol_count] = symbol;
                 fip_print(                                         //
                     ID, FIP_INFO, "Found struct: '%s' at line %d", //
@@ -1325,16 +1350,14 @@ enum CXChildVisitResult visit_ast_node( //
             symbol.line_number = (int)line;
             symbol.type = FIP_SYM_ENUM;
 
-            if (extract_enum_signature(cursor, &symbol.sig.enum_t)) {
+            if (extract_enum_signature(cursor, &symbol.sig.enum_t) //
+                && !symbol_name_exists(symbol.sig.enum_t.name)     //
+            ) {
                 curr_coll->symbols[curr_coll->symbol_count] = symbol;
-
                 fip_print(                                       //
                     ID, FIP_INFO, "Found enum: '%s' at line %d", //
                     symbol.sig.enum_t.name, symbol.line_number   //
                 );
-                // fip_print_sig_enum(ID, &symbol.signature.enum_t); //
-                // Uncomment if print function exists
-
                 curr_coll->symbol_count++;
             }
             break;
