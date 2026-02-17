@@ -88,7 +88,7 @@ int main() {
 
     // Send the tag request message to all connected interop modules
     msg.type = FIP_MSG_TAG_REQUEST;
-    strcpy(msg.u.tag_req.tag, "ext");
+    strcpy(msg.u.tag_req.tag, "raylib");
     fip_tag_request_result_t sig_list = fip_master_tag_request(msg_buf, &msg);
     switch (sig_list.status) {
         case FIP_TAG_REQUEST_STATUS_OK:
@@ -128,7 +128,7 @@ int main() {
     }
     fip_free_sig_list(sig_list.list);
 
-    // Broadcast the add function
+    // Search the add function
     // extern def add(mut i32* lhs, mut i32 rhs);
     // msg.type = FIP_MSG_SYMBOL_REQUEST;
     // msg.u.sym_req.type = FIP_SYM_FUNCTION;
