@@ -793,6 +793,27 @@ fip_tag_request_result_t fip_master_tag_request( //
     const fip_msg_t *message                     //
 );
 
+/// @function `fip_master_receive_message_from`
+/// @brief Reads a message from stdin from a given IM id and stores it in the
+/// buffer
+///
+/// @param `id` The id of the slave to get the message from
+/// @param `buffer` The buffer where to store the recieved message at
+/// @return `bool` Whether a message was recieved
+bool fip_master_receive_message_from(uint32_t id, char buffer[FIP_MSG_SIZE]);
+
+/// @function `fip_master_send_message_to`
+/// @brief Sends a message to the stdout of a given interop module
+///
+/// @param `id` The id of the slave to send the message to
+/// @param `buffer` The buffer in which the message to send will be stored
+/// @param `message` The message which will be sent
+void fip_master_send_message_to( //
+    uint32_t id,                 //
+    char buffer[FIP_MSG_SIZE],   //
+    const fip_msg_t *message     //
+);
+
 /// @function `fip_master_cleanup`
 /// @brief Cleans up the master
 void fip_master_cleanup();
@@ -2808,6 +2829,47 @@ fip_tag_request_result_t fip_master_tag_request( //
         .status = FIP_TAG_REQUEST_STATUS_OK,
         .list = sig_list,
     };
+}
+
+bool fip_master_receive_message_from(uint32_t id, char buffer[FIP_MSG_SIZE]) {
+    FILE *slave_stdout = master_state.slave_stdout[id];
+    if (slave_stdout == NULL) {
+        fip_print(0, FIP_ERROR, "Cannot receive msg from nonexistent slave %u",
+            id);
+    }
+    uint32_t msg_len;
+    if (fread(&msg_len, 1, 4, slave_stdout) != 4) {
+        return false;
+    }
+    if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
+        return false;
+    }
+    memset(buffer, 0, FIP_MSG_SIZE);
+    if (fread(buffer, 1, msg_len, slave_stdout) != msg_len) {
+        return false;
+    }
+    return true;
+}
+
+void fip_master_send_message_to( //
+    uint32_t id,                 //
+    char buffer[FIP_MSG_SIZE],   //
+    const fip_msg_t *message     //
+) {
+    FILE *slave_stdin = master_state.slave_stdin[id];
+    if (slave_stdin == NULL) {
+        fip_print(0, FIP_ERROR, "Cannot send msg to nonexistent slave %u", id);
+    }
+    fip_encode_msg(buffer, message);
+    uint32_t msg_len;
+    memcpy(&msg_len, buffer, sizeof(uint32_t));
+    size_t written_bytes = fwrite(buffer, 1, msg_len + 4, slave_stdin);
+    if (written_bytes != msg_len + 4) {
+        fip_print(0, FIP_ERROR, "Failed to write message");
+        return;
+    }
+    fip_print(0, FIP_INFO, "Successfully sent message of %u bytes", msg_len);
+    fflush(slave_stdin);
 }
 
 void fip_master_cleanup() {
