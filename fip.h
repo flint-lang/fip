@@ -822,7 +822,7 @@ fip_master_config_t fip_master_load_config(const char *config_path);
 /// @return `bool` Whether initialization was successful
 bool fip_slave_init(uint32_t slave_id);
 
-/// @function `fip_slave_recieve_message`
+/// @function `fip_slave_receive_message`
 /// @brief Reads a message from stdin and stores it in the buffer
 ///
 /// @param `buffer` The buffer where to store the recieved message at
@@ -2847,6 +2847,21 @@ void fip_master_cleanup() {
 
 #ifdef FIP_SLAVE
 
+bool fip_slave_receive_message(char buffer[FIP_MSG_SIZE]) {
+    uint32_t msg_len;
+    if (fread(&msg_len, 1, 4, stdin) != 4) {
+        return false;
+    }
+    if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
+        return false;
+    }
+    memset(buffer, 0, FIP_MSG_SIZE);
+    if (fread(buffer, 1, msg_len, stdin) != msg_len) {
+        return false;
+    }
+    return true;
+}
+
 void fip_slave_send_message(   //
     uint32_t id,               //
     char buffer[FIP_MSG_SIZE], //
@@ -3146,21 +3161,6 @@ bool fip_slave_init(uint32_t slave_id) {
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
     fip_print(slave_id, FIP_INFO, "Slave initialized for stdio communication");
-    return true;
-}
-
-bool fip_slave_receive_message(char buffer[FIP_MSG_SIZE]) {
-    uint32_t msg_len;
-    if (fread(&msg_len, 1, 4, stdin) != 4) {
-        return false;
-    }
-    if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
-        return false;
-    }
-    memset(buffer, 0, FIP_MSG_SIZE);
-    if (fread(buffer, 1, msg_len, stdin) != msg_len) {
-        return false;
-    }
     return true;
 }
 
@@ -3588,27 +3588,6 @@ fip_master_config_t fip_master_load_config(const char *config_path) {
 
 bool fip_slave_init(uint32_t slave_id) {
     fip_print(slave_id, FIP_INFO, "Slave initialized for stdio communication");
-    return true;
-}
-
-bool fip_slave_receive_message(char buffer[FIP_MSG_SIZE]) {
-    // Read message length (4 bytes) from stdin
-    uint32_t msg_len;
-    if (fread(&msg_len, 1, 4, stdin) != 4) {
-        return false; // No message available
-    }
-
-    // Validate message length
-    if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
-        return false;
-    }
-
-    // Read message data
-    memset(buffer, 0, FIP_MSG_SIZE);
-    if (fread(buffer, 1, msg_len, stdin) != msg_len) {
-        return false;
-    }
-
     return true;
 }
 
