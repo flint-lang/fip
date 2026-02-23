@@ -3067,6 +3067,13 @@ void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
             win_processes[i].process = NULL;
         }
     }
+    modules->active_count = 0;
+    master_state.slave_count = 0;
+    memset(&master_state.responses, 0, sizeof(fip_msg_t) + FIP_MAX_SLAVES);
+    master_state.response_count = 0;
+    memset(&master_state.slave_stdin, NULL, sizeof(FILE *) * FIP_MAX_SLAVES);
+    memset(&master_state.slave_stdout, NULL, sizeof(FILE *) * FIP_MAX_SLAVES);
+    memset(&master_state.slave_stderr, NULL, sizeof(FILE *) * FIP_MAX_SLAVES);
 }
 
 bool fip_master_init(fip_interop_modules_t *modules) {
@@ -3377,6 +3384,13 @@ void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
             kill(modules->pids[i], SIGTERM);
         }
     }
+    modules->active_count = 0;
+    master_state.slave_count = 0;
+    memset(&master_state.responses, 0, sizeof(fip_msg_t) + FIP_MAX_SLAVES);
+    master_state.response_count = 0;
+    memset(&master_state.slave_stdin, 0, sizeof(FILE *) * FIP_MAX_SLAVES);
+    memset(&master_state.slave_stdout, 0, sizeof(FILE *) * FIP_MAX_SLAVES);
+    memset(&master_state.slave_stderr, 0, sizeof(FILE *) * FIP_MAX_SLAVES);
 }
 
 bool fip_master_init(fip_interop_modules_t *modules) {
