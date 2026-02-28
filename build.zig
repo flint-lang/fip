@@ -117,6 +117,7 @@ fn buildFipC(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.Re
             "-fdata-sections",              // Place each data object in its own section
             "-fstandalone-debug",           // Emit standalone debug information
             "-Wdeprecated-declarations",    // Warn about deprecated declarations
+            "-D_CINDEX_LIB_",               // Statically link libclang
         },
     });
     // zig fmt: on
