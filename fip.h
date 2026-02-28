@@ -107,7 +107,7 @@ static void msleep(unsigned int ms) {
 // The version of the FIP
 #define FIP_MAJOR 0
 #define FIP_MINOR 3
-#define FIP_PATCH 0
+#define FIP_PATCH 2
 
 #define FIP_MAX_MODULE_NAME_LEN 16
 
@@ -3071,9 +3071,9 @@ void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
     master_state.slave_count = 0;
     memset(&master_state.responses, 0, sizeof(fip_msg_t) + FIP_MAX_SLAVES);
     master_state.response_count = 0;
-    memset(&master_state.slave_stdin, NULL, sizeof(FILE *) * FIP_MAX_SLAVES);
-    memset(&master_state.slave_stdout, NULL, sizeof(FILE *) * FIP_MAX_SLAVES);
-    memset(&master_state.slave_stderr, NULL, sizeof(FILE *) * FIP_MAX_SLAVES);
+    memset(&master_state.slave_stdin, 0, sizeof(FILE *) * FIP_MAX_SLAVES);
+    memset(&master_state.slave_stdout, 0, sizeof(FILE *) * FIP_MAX_SLAVES);
+    memset(&master_state.slave_stderr, 0, sizeof(FILE *) * FIP_MAX_SLAVES);
 }
 
 bool fip_master_init(fip_interop_modules_t *modules) {
