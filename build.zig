@@ -161,7 +161,7 @@ fn buildExamples(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
     // Add C++ src files
     exe.root_module.addCSourceFile(.{
         .file = b.path(
-            "modules/c/example_master.c"
+            "modules/example_master.c"
         ),
         .flags = &[_][]const u8{
             "-std=c17",                     // Set C standard to C17
