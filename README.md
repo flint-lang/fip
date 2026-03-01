@@ -32,7 +32,7 @@ This repository is contains the Flint Interop Protocol implementation.
 
 # Introduction
 
-The Flint Interop Protocol (FIP) is a protocol aimed at gneralizing the communication of multiple compile modules for the Flint compiler. The Flint compiler handles all extern functions as black boxes. The FIP works like this:
+The Flint Interop Protocol (FIP) is a protocol aimed at generalizing the communication of multiple compile modules for the Flint compiler. The Flint compiler handles all extern functions as black boxes. The FIP works like this:
 
 1. The Flint Compiler (`flintc`) will spawn all enabled `fip` modules from the config located in `.fip/config/fip.toml`
 2. The Compiler waits for all spawned Interop Modules to send a connect request to it
@@ -87,7 +87,7 @@ command = ["gcc", "-c", "__SOURCES__", "-o", "__OUTPUT__"]
 
 You could use any C compiler of your liking with the command (`clang`, `gcc`, `filc`, `zig cc`, etc), it just needs to be able to compile source files and produce a `.o` file, that's it.
 
-If you want, you can leave the `sources` and `command` fields out entirely and just have a `header`. This is usefull when relying on system variables, for example raylib:
+If you want, you can leave the `sources` and `command` fields out entirely and just have a `header`. This is useful when relying on system variables, for example raylib:
 
 ```toml
 [raylib]
@@ -96,11 +96,11 @@ headers = ["/usr/include/raylib.h"]
 
 And then you would need to link the raylib library (`-lraylib`) some other way, for example by adding the `--flags="-lraylib"` flag to the `flintc` compiler.
 
-Different Modules can have vastly different configuration files, taylored to their specific language. The `fip-rs` module could have a `crates = []` field, for example. The module-specific configuration files are _not_ parsed by the compiler, they are _only_ parsed by their targeted Interop Module. When creating your own interop module named `mymodule` (for example) you should call the config file `mymodule.toml` too. Keep all names related.
+Different Modules can have vastly different configuration files, tailored to their specific language. The `fip-rs` module could have a `crates = []` field, for example. The module-specific configuration files are _not_ parsed by the compiler, they are _only_ parsed by their targeted Interop Module. When creating your own interop module named `mymodule` (for example) you should call the config file `mymodule.toml` too. Keep all names related.
 
 ## `fip-c`
 
-Now let's come to the Interop Module itself. Because the `fip-c` executable depends on `libclang`, it has became quite large. Because of this the `fip-c` exectuable now needs to be installed system-wide. You just need to make sure that you put the binary into a directory present in your `PATH` variable. You can download the `fip-c` binary from the [Releases](https://github.com/flint-lang/fip/releases) page.
+Now let's come to the Interop Module itself. Because the `fip-c` executable depends on `libclang`, it has became quite large. Because of this the `fip-c` executable now needs to be installed system-wide. You just need to make sure that you put the binary into a directory present in your `PATH` variable. You can download the `fip-c` binary from the [Releases](https://github.com/flint-lang/fip/releases) page.
 
 # Bindings
 
