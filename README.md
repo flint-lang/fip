@@ -75,16 +75,26 @@ to the `fip.toml` file and your module will pretty much be good to go, as long a
 In addition to the `fip.toml` which is read and parsed by the Flint Compiler you also need to provide a configuration file for your Interop Module, for the `fip-c` module this configuration file must be named `fip-c.toml` and it must be located in the `.fip/config/` directory, next to the `fip.toml` file. All config files of FIP will land in this directory. The `fip-c.toml` file needs to look like this:
 
 ```toml
-compiler = "clang"
-sources = ["path/to/header.h", "path/to/source.c"]
-compile_flags = ["-g", "-O0"]
+[sometag]
+headers = ["someheader.h"]
+sources = ["path/to/source.c"]
+command = ["gcc", "-c", "__SOURCES__", "-o", "__OUTPUT__"]
 ```
 
-The `compiler` field is just the compiler executable which will be executed. It can be `clang`, `gcc`, `filc`, `zig cc` or any other C compiler of your liking.
-The `sources` field is a simple array of string values, each pointing to a source which will be parsed and scanned for definitions by the `fip-c` Interop Module
-The `compile_flags` field is a simple array of string values for all compile flags you would normally call the compiler with
+- The `headers` field is a list of C headers the `fip-c` module will parse and check for definitions, symbols etc.
+- The (optional) `sources` field is a list of all C sources which will be compiled using the `command` to produce a single `.o` file.
+- The (optional) `command` field contains a list of substrings making up the command string where there's a space between all flags for the command. The important fields are the `__SOURCES__` field, which just copy-pastes all the `sources` into the command, and the `__OUTPUT__` field which will resolve to a hashed file output like `.fip/cache/sH320AnH.o`. The important flags are the `-o` for output before the `__OUTPUT__` field and the `-c` flag to tell `gcc` to create a `.o` file, not an executable.
 
-With these commands, the C compiler is called to produce the `.o` file(s) from the source(s). These are all configurations that are available at the moment, it will be expanded in the future. Also, these fields are **not** optional. The `fip-c` module will exit with an message of a faulty config if not all fields are provided (the arrays could be empty). For empty sources the `fip-c` Interop Module will exit too, as it does not have anything to do. Actually it idles because exiting would break the Flint Compiler as it would wait on a process which does no longer exist, so for now the IM just keeps running until the compiler is done and sends the kill message.
+You could use any C compiler of your liking with the command (`clang`, `gcc`, `filc`, `zig cc`, etc), it just needs to be able to compile source files and produce a `.o` file, that's it.
+
+If you want, you can leave the `sources` and `command` fields out entirely and just have a `header`. This is usefull when relying on system variables, for example raylib:
+
+```toml
+[raylib]
+headers = ["/usr/include/raylib.h"]
+```
+
+And then you would need to link the raylib library (`-lraylib`) some other way, for example by adding the `--flags="-lraylib"` flag to the `flintc` compiler.
 
 Different Modules can have vastly different configuration files, taylored to their specific language. The `fip-rs` module could have a `crates = []` field, for example. The module-specific configuration files are _not_ parsed by the compiler, they are _only_ parsed by their targeted Interop Module. When creating your own interop module named `mymodule` (for example) you should call the config file `mymodule.toml` too. Keep all names related.
 
@@ -94,29 +104,33 @@ Now let's come to the Interop Module itself. Because the `fip-c` executable depe
 
 # Bindings
 
-Because each Interop Module is a "master" in it's own language, you do not need to write bindings for external code at all. But, you sadly still need to declare each extern function you want to use, through an extern definition like
+Because each Interop Module is a "master" in it's own language, you do not need to write bindings for external code at all. You can either manually declare extern functions you want to use through an extern definition like
 
 ```rs
 extern def foo(i32 x);
 ```
 
-If you want to use a library with a lot of functions you will end up with a situation where you have a `raylib.ft` file just containing all definitions for the external functions. This is not optimal, and I am working on a solution to that problem, but it's design is not yet fully resolved. I was thinking about a flag of the Flint Compiler to tell it to generate "bindings" (a `.ft` file containing all extern definitions) of all extern code, but I want to limit this somehow. This problem is related to a different problem.
-
-When you want to use the `SDL` and `raylib` library from C, for example, but you want them to be compiled using different compile flags, you simply cannot do it effectively as of now. The solution I imagine would look as follows:
+or you can rely on the tagging-system of FIP. The `[sometag]` field, for example, "groups" the `.o` file and all found symbols of the headers under this tag. Through the tagging system you could do something like
 
 ```toml
 [raylib]
-compiler = "clang"
-sources = ["/usr/include/raylib.h"]
-compile_flags = ["-g", "-O1"]
+headers = ["/usr/include/raylib.h"]
 
-[SDL]
-compiler = "gcc"
-sources = ["/usr/include/SDL3/SDL.h"]
-compile_flags = ["-g", "-O3"]
+[sdl]
+headers = ["/usr/include/SDL/SDL.h"]
 ```
 
-Here, the whole `fip-c.toml` file can be repeated under a few different headers. If you do not add a header at all (in the above example) the header will just be called `fip-c` I think. But, if you then run the automatic bind gen from the Flint Compiler I couold very well imagine that it could produce one `.ft` file for each header. The header text could be arbitrary in this case, it is just the name of the "collection". For now the best directory to put it would probably be `.fip/bindings/raylib.ft` and `.fip/bindings/SDL.ft` but I am not sure about that yet.
+and there would be no symbol-collisions between `raylib` and `sdl` respectively. Within Flint, you then can write
+
+```rs
+use Fip.raylib as rl
+use Fip.sdl as sdl
+```
+
+to "import" all extern symbols found in raylib or SDL respectively. This will auto-generate a `.fip/generated/raylib.ft` and `.fip/generated/sdl.ft` file respectively. You can add as many header files under on tag as you like, they will all end up in the same generated file respectively. The symbol-collection and gathering system is built into the FIP library itself, the master (`flintc`) just needs to generate the `.ft` file(s) from the gathered symbol informations itself. This means that different language masters could generate vastly different "binding files" from the same externally found symbols.
+
+# Future
+
 I don't really like the idea that binding code you want to call is located in a hidden directory (`.fip`). For configuration, cache etc this is fine, but for files you actively want to use this feels wrong. I do not have a solution for this problem yet, but this is the direction in which FIP will evolve into. So, stay tuned for what FIP will become!
 
 The best thing I could come up with is that a `binding_path` field in the `fip.toml` file could be added, like so:
@@ -136,7 +150,8 @@ ROOT/
  │      ├─ fip.toml
  │      └─ fip-c.toml
  └─ src/
-     └─ main.ft
+     ├─ raylib.ft
+     └─ sdl.ft
 ```
 
-The `fip-c.toml` file could look like above, with the `[raylib]` and `[SDL]` sections. Then, the `raylib.ft` and `SDL.ft` files are auto-generated and placed in the `src` directory... Not all edge-cases of this design have been considered yet, but I think it should be the right direction to move towards. This is only theoretical, though, and nothing about this does work yet.
+The `fip-c.toml` file could look like above, with the `[raylib]` and `[sdl]` sections. Then, the `raylib.ft` and `sdl.ft` files are auto-generated and placed in the `src` directory... Not all edge-cases of this design have been considered yet, but I think it should be the right direction to move towards. This is only theoretical, though, and all auto-generated files are still placed in the `.fip/generated/` directory.
