@@ -837,6 +837,15 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             // Get the struct declaration cursor
             CXCursor type_cursor = clang_getTypeDeclaration(canonical);
 
+            // Check if this is an opaque / forward-declared struct (no body)
+            if (!clang_isCursorDefinition(type_cursor)) {
+                fip_print(ID, FIP_TRACE,
+                    "Incomplete/opaque struct, treating as void");
+                fip_type->type = FIP_TYPE_PRIMITIVE;
+                fip_type->u.prim = FIP_VOID;
+                goto ok;
+            }
+
             // Extracting the type name
             CXString struct_name = clang_getCursorSpelling(type_cursor);
             const char *name_cstr = clang_getCString(struct_name);
@@ -977,6 +986,32 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
 
             fip_print(ID, FIP_TRACE,
                 "Successfully processed enum with %d constants", value_count);
+            goto ok;
+        }
+        case CXType_ConstantArray: {
+            CXType element_type = clang_getArrayElementType(canonical);
+            size_t array_size = clang_getArraySize(canonical);
+            fip_type->type = FIP_TYPE_ARRAY;
+            fip_type->u.array.size = array_size;
+            fip_type->u.array.base_type = malloc(sizeof(fip_type_t));
+            if (!clang_type_to_fip_type(                       //
+                    element_type, fip_type->u.array.base_type) //
+            ) {
+                goto fail;
+            }
+            goto ok;
+        }
+        case CXType_IncompleteArray: {
+            CXType element_type = clang_getArrayElementType(canonical);
+            fip_type->type = FIP_TYPE_PTR;
+            fip_type->u.ptr.base_type = malloc(sizeof(fip_type_t));
+            if (!clang_type_to_fip_type(                     //
+                    element_type, fip_type->u.ptr.base_type) //
+            ) {
+                fip_print(ID, FIP_WARN, "Unsupported array element type");
+                free(fip_type->u.ptr.base_type);
+                goto fail;
+            }
             goto ok;
         }
         case CXType_Complex: {

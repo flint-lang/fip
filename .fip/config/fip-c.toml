@@ -1,2 +1,4 @@
-[raylib]
-headers = ["/usr/include/raylib.h"]
+[c]
+headers = ["extern.h"]
+sources = ["extern.h"]
+command = ["gcc", "-c", "__SOURCES__", "-o", "__OUTPUT__"]

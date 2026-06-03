@@ -88,7 +88,7 @@ int main() {
 
     // Send the tag request message to all connected interop modules
     msg.type = FIP_MSG_TAG_REQUEST;
-    strcpy(msg.u.tag_req.tag, "raylib");
+    strcpy(msg.u.tag_req.tag, "c");
     fip_tag_request_result_t sig_list = fip_master_tag_request(msg_buf, &msg);
     switch (sig_list.status) {
         case FIP_TAG_REQUEST_STATUS_OK:

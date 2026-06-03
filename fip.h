@@ -238,6 +238,13 @@ typedef struct {
     size_t *values;
 } fip_type_enum_t;
 
+/// @typedef `fip_type_array_t`
+/// @brief The struct representing fixed-size arrays
+typedef struct {
+    size_t size;
+    struct fip_type_t *base_type;
+} fip_type_array_t;
+
 /// @typedef `fip_type_e`
 /// @brief The enum containing all possible FIP types there are
 typedef enum fip_type_e : uint8_t {
@@ -246,6 +253,7 @@ typedef enum fip_type_e : uint8_t {
     FIP_TYPE_STRUCT,
     FIP_TYPE_RECURSIVE,
     FIP_TYPE_ENUM,
+    FIP_TYPE_ARRAY,
 } fip_type_e;
 
 /// @typedef `fip_type_t`
@@ -259,6 +267,7 @@ typedef struct fip_type_t {
         fip_type_struct_t struct_t;
         fip_type_recursive_t recursive;
         fip_type_enum_t enum_t;
+        fip_type_array_t array;
     } u;
 } fip_type_t;
 
@@ -1274,10 +1283,15 @@ void fip_encode_type(          //
                 memcpy(                                                      //
                     &buffer[*idx], &type->u.enum_t.values[i], sizeof(size_t) //
                 );
-                *idx += 8;
+                *idx += sizeof(size_t);
             }
             break;
         }
+        case FIP_TYPE_ARRAY:
+            memcpy(&buffer[*idx], &type->u.array.size, sizeof(size_t));
+            *idx += sizeof(size_t);
+            fip_encode_type(buffer, idx, type->u.array.base_type);
+            break;
     }
 }
 
@@ -1574,6 +1588,12 @@ void fip_decode_type(                //
             }
             break;
         }
+        case FIP_TYPE_ARRAY:
+            memcpy(&type->u.array.size, &buffer[*idx], sizeof(size_t));
+            *idx += sizeof(size_t);
+            type->u.array.base_type = (fip_type_t *)malloc(sizeof(fip_type_t));
+            fip_decode_type(buffer, idx, type->u.array.base_type);
+            break;
     }
 }
 
@@ -1847,6 +1867,10 @@ void fip_free_type(fip_type_t *type) {
             break;
         case FIP_TYPE_ENUM:
             free(type->u.enum_t.values);
+            break;
+        case FIP_TYPE_ARRAY:
+            fip_free_type(type->u.array.base_type);
+            free(type->u.array.base_type);
             break;
     }
 }
@@ -2214,7 +2238,18 @@ void fip_print_type(           //
                 }
             }
             buffer[(*idx)++] = '}';
+            break;
         }
+        case FIP_TYPE_ARRAY:
+            fip_print_type(buffer, idx, type->u.array.base_type);
+            buffer[(*idx)++] = '[';
+            int wrote = snprintf(&buffer[*idx], 20, "%lu", type->u.array.size);
+            if (wrote < 0) {
+                wrote = 0;
+            }
+            *idx += wrote;
+            buffer[(*idx)++] = ']';
+            break;
     }
 }
 
@@ -2398,6 +2433,11 @@ void fip_clone_type(fip_type_t *dest, const fip_type_t *src) {
             }
             break;
         }
+        case FIP_TYPE_ARRAY:
+            dest->u.array.size = src->u.array.size;
+            dest->u.array.base_type = (fip_type_t *)malloc(sizeof(fip_type_t));
+            fip_clone_type(dest->u.array.base_type, src->u.array.base_type);
+            break;
     }
 }
 
