@@ -29,20 +29,16 @@ pub fn build(b: *std.Build) !void {
 
     const target = b.resolveTargetQuery(switch (target_option) {
         .linux => .{
-            .cpu_arch = .x86_64,
             .cpu_model = .baseline,
+            .cpu_arch = .x86_64,
             .os_tag = .linux,
-            .os_version_min = .{ .semver = .{ .major = 6, .minor = 12, .patch = 0 } },
-            .abi = .gnu,
-            .glibc_version = .{ .major = 2, .minor = 40, .patch = 0 },
+            .abi = .musl,
         },
         .windows => .{
-            .cpu_arch = .x86_64,
             .cpu_model = .baseline,
+            .cpu_arch = .x86_64,
             .os_tag = .windows,
-            .os_version_min = .{ .windows = .win7 },
             .abi = .gnu,
-            .glibc_version = .{ .major = 2, .minor = 40, .patch = 0 },
         },
     });
 
@@ -142,6 +138,7 @@ fn buildExamples(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
             .target = target,
             .optimize = optimize,
             .link_libc = true,
+            .pic = true,
         }),
         .version = try .parse(FIP_VERSION),
     });
@@ -205,16 +202,16 @@ fn buildLLVM(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.Re
     const llvm_build_dir = b.fmt(".zig-cache/llvm-{s}", .{build_name});
     const install_dir = b.fmt("vendor/llvm-{s}", .{build_name});
 
-    if (std.fs.cwd().openDir(install_dir, .{})) |_| {
+    if (std.Io.Dir.cwd().openDir(b.graph.io, install_dir, .{})) |_| {
         // LLVM is already built, rebuilt only if requested
         if (force_rebuild) {
-            try std.fs.cwd().deleteTree(install_dir);
+            try std.Io.Dir.cwd().deleteTree(b.graph.io, install_dir);
         } else {
             return makeEmptyStep(b);
         }
     } else |_| {}
     if (force_rebuild) {
-        try std.fs.cwd().deleteTree(llvm_build_dir);
+        try std.Io.Dir.cwd().deleteTree(b.graph.io, llvm_build_dir);
     }
 
     std.debug.print("-- Building LLVM for {s}\n", .{build_name});
@@ -231,17 +228,17 @@ fn buildLLVM(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.Re
         b.fmt("-DCMAKE_INSTALL_PREFIX={s}", .{install_dir}),
         "-DCMAKE_BUILD_TYPE=MinSizeRel",
         b.fmt("-DCMAKE_C_COMPILER={s}", .{switch (target.result.os.tag) {
-            .linux => "zig;cc",
+            .linux => "zig;cc;-target;x86_64-linux-musl",
             .windows => "zig;cc;-target;x86_64-windows-gnu",
             else => return error.TargetNeedsToBeLinuxOrWindows,
         }}),
         b.fmt("-DCMAKE_CXX_COMPILER={s}", .{switch (target.result.os.tag) {
-            .linux => "zig;c++",
+            .linux => "zig;c++;-target;x86_64-linux-musl",
             .windows => "zig;c++;-target;x86_64-windows-gnu",
             else => return error.TargetNeedsToBeLinuxOrWindows,
         }}),
         b.fmt("-DCMAKE_ASM_COMPILER={s}", .{switch (target.result.os.tag) {
-            .linux => "zig;cc",
+            .linux => "zig;cc;-target;x86_64-linux-musl",
             .windows => "zig;cc;-target;x86_64-windows-gnu",
             else => return error.TargetNeedsToBeLinuxOrWindows,
         }}),
@@ -262,7 +259,6 @@ fn buildLLVM(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.Re
         "-DLLVM_ENABLE_FFI=OFF",
         "-DLLVM_ENABLE_LIBEDIT=OFF",
         "-DLLVM_ENABLE_LIBXML2=OFF",
-        "-DLLVM_ENABLE_PIC=OFF", // To avoid "error: unsupported linker arg:", "-Bsymbolic-functions"
         "-DLLVM_ENABLE_Z3_SOLVER=OFF",
         "-DLLVM_ENABLE_ZLIB=OFF",
         "-DLLVM_ENABLE_ZSTD=OFF",
@@ -305,7 +301,7 @@ fn buildLLVM(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.Re
         b.fmt("-DLLVM_PARALLEL_LINK_JOBS={d}", .{jobs}),
     });
     setup_llvm.setEnvironmentVariable("CC", "zig;cc");
-    setup_llvm.setEnvironmentVariable("CXX", "zig;cxx");
+    setup_llvm.setEnvironmentVariable("CXX", "zig;c++");
     setup_llvm.setEnvironmentVariable("ASM", "zig;cc");
     setup_llvm.setName("llvm_setup");
     setup_llvm.step.dependOn(previous_step);
@@ -355,15 +351,17 @@ fn linkWithClangLibs(b: *std.Build, previous_step: *std.Build.Step, exe: *std.Bu
 
         pub fn make(step: *std.Build.Step, _: std.Build.Step.MakeOptions) !void {
             const self: *@This() = @fieldParentPtr("step", step);
+            const io = step.owner.graph.io;
 
-            var llvm_dir = try std.fs.cwd().openDir(self.llvm_libdir, .{ .iterate = true });
-            defer llvm_dir.close();
+            var llvm_dir = try std.Io.Dir.cwd().openDir(io, self.llvm_libdir, .{ .iterate = true });
+            defer llvm_dir.close(io);
 
-            const static_lib_prefix = "lib";
-            const static_lib_suffix = ".a";
+            const target = self.exe.rootModuleTarget();
+            const static_lib_prefix = target.libPrefix();
+            const static_lib_suffix = target.staticLibSuffix();
 
             var iter = llvm_dir.iterate();
-            while (try iter.next()) |entry| {
+            while (try iter.next(io)) |entry| {
                 std.debug.assert(entry.name.len > 0);
                 std.debug.assert(std.mem.startsWith(u8, entry.name, static_lib_prefix));
 
@@ -391,7 +389,7 @@ fn linkWithClangLibs(b: *std.Build, previous_step: *std.Build.Step, exe: *std.Bu
 fn updateLLVM(b: *std.Build, llvm_version: []const u8) !*std.Build.Step.Run {
     std.debug.print("-- Updating the 'llvm-project' repository\n", .{});
     // 1. Check if llvm-project exists in vendor directory
-    if (std.fs.cwd().openDir("vendor/sources/llvm-project", .{})) |_| {
+    if (std.Io.Dir.cwd().openDir(b.graph.io, "vendor/sources/llvm-project", .{})) |_| {
         // 2. Check for internet connection
         if (!hasInternetConnection(b)) {
             std.debug.print("-- No internet connection found, skipping updating 'llvm-project'...\n", .{});
@@ -435,12 +433,21 @@ fn updateLLVM(b: *std.Build, llvm_version: []const u8) !*std.Build.Step.Run {
 fn makeEmptyStep(b: *std.Build) !*std.Build.Step.Run {
     const run_step = b.addSystemCommand(&[_][]const u8{ "zig", "version" });
     run_step.setName("make_empty_step");
-    _ = run_step.captureStdOut();
+    _ = run_step.captureStdOut(.{});
     return run_step;
 }
 
 fn hasInternetConnection(b: *std.Build) bool {
-    const s = std.net.tcpConnectToHost(b.allocator, "google.com", 443) catch return false;
-    s.close();
+    const hostname: std.Io.net.HostName = .{ .bytes = "google.com" };
+    const conn: std.Io.net.Stream = hostname.connect(
+        b.graph.io,
+        443,
+        .{
+            .mode = .stream,
+            .protocol = .tcp,
+            .timeout = .none,
+        },
+    ) catch return false;
+    conn.close(b.graph.io);
     return true;
 }
