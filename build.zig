@@ -68,6 +68,7 @@ fn buildFipC(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.Re
     }
     exe.link_function_sections = true;
     exe.link_data_sections = true;
+    exe.link_gc_sections = true;
     exe.compress_debug_sections = .zlib;
     exe.build_id = .fast;
 
@@ -138,7 +139,6 @@ fn buildExamples(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
             .target = target,
             .optimize = optimize,
             .link_libc = true,
-            .pic = true,
         }),
         .version = try .parse(FIP_VERSION),
     });
@@ -259,6 +259,7 @@ fn buildLLVM(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.Re
         "-DLLVM_ENABLE_FFI=OFF",
         "-DLLVM_ENABLE_LIBEDIT=OFF",
         "-DLLVM_ENABLE_LIBXML2=OFF",
+        "-DLLVM_ENABLE_PIC=OFF",
         "-DLLVM_ENABLE_Z3_SOLVER=OFF",
         "-DLLVM_ENABLE_ZLIB=OFF",
         "-DLLVM_ENABLE_ZSTD=OFF",
@@ -356,14 +357,16 @@ fn linkWithClangLibs(b: *std.Build, previous_step: *std.Build.Step, exe: *std.Bu
             var llvm_dir = try std.Io.Dir.cwd().openDir(io, self.llvm_libdir, .{ .iterate = true });
             defer llvm_dir.close(io);
 
-            const target = self.exe.rootModuleTarget();
-            const static_lib_prefix = target.libPrefix();
-            const static_lib_suffix = target.staticLibSuffix();
+            const static_lib_prefix = "lib";
+            const static_lib_suffix = ".a";
 
             var iter = llvm_dir.iterate();
             while (try iter.next(io)) |entry| {
                 std.debug.assert(entry.name.len > 0);
                 std.debug.assert(std.mem.startsWith(u8, entry.name, static_lib_prefix));
+                if (!std.mem.endsWith(u8, entry.name, static_lib_suffix)) {
+                    continue;
+                }
 
                 const lib_name = entry.name[static_lib_prefix.len .. entry.name.len - static_lib_suffix.len];
                 self.exe.root_module.linkSystemLibrary(lib_name, .{});
