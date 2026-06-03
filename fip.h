@@ -1917,12 +1917,45 @@ void fip_free_msg(fip_msg_t *message) {
                     message->u.sym_req.sig.fn.rets_len = 0;
                     break;
                 }
-                case FIP_SYM_DATA:
-                    // Not implemented yet
-                    assert(false);
-                case FIP_SYM_ENUM:
-                    // Not implemented yet
-                    assert(false);
+                case FIP_SYM_DATA: {
+                    message->u.sym_req.type = FIP_SYM_UNKNOWN;
+                    memset(
+                        message->u.sym_req.sig.data.name, 0,
+                        sizeof(message->u.sym_req.sig.data.name));
+                    uint8_t data_val_cnt =
+                        message->u.sym_req.sig.data.value_count;
+                    if (data_val_cnt > 0) {
+                        for (uint8_t i = 0; i < data_val_cnt; i++) {
+                            free(message->u.sym_req.sig.data.value_names[i]);
+                        }
+                        free(message->u.sym_req.sig.data.value_names);
+                        for (uint8_t i = 0; i < data_val_cnt; i++) {
+                            fip_free_type(
+                                &message->u.sym_req.sig.data.value_types[i]);
+                        }
+                        free(message->u.sym_req.sig.data.value_types);
+                    }
+                    message->u.sym_req.sig.data.value_count = 0;
+                    break;
+                }
+                case FIP_SYM_ENUM: {
+                    message->u.sym_req.type = FIP_SYM_UNKNOWN;
+                    memset(
+                        message->u.sym_req.sig.enum_t.name, 0,
+                        sizeof(message->u.sym_req.sig.enum_t.name));
+                    message->u.sym_req.sig.enum_t.type = FIP_VOID;
+                    uint8_t enum_val_cnt =
+                        message->u.sym_req.sig.enum_t.value_count;
+                    if (enum_val_cnt > 0) {
+                        for (uint8_t i = 0; i < enum_val_cnt; i++) {
+                            free(message->u.sym_req.sig.enum_t.tags[i]);
+                        }
+                        free(message->u.sym_req.sig.enum_t.tags);
+                        free(message->u.sym_req.sig.enum_t.values);
+                    }
+                    message->u.sym_req.sig.enum_t.value_count = 0;
+                    break;
+                }
             }
             break;
         case FIP_MSG_SYMBOL_RESPONSE:
@@ -1958,12 +1991,45 @@ void fip_free_msg(fip_msg_t *message) {
                     message->u.sym_res.sig.fn.rets_len = 0;
                     break;
                 }
-                case FIP_SYM_DATA:
-                    // Not implemented yet
-                    assert(false);
-                case FIP_SYM_ENUM:
-                    // Not implemented yet
-                    assert(false);
+                case FIP_SYM_DATA: {
+                    message->u.sym_res.type = FIP_SYM_UNKNOWN;
+                    memset(
+                        message->u.sym_res.sig.data.name, 0,
+                        sizeof(message->u.sym_res.sig.data.name));
+                    uint8_t data_val_cnt =
+                        message->u.sym_res.sig.data.value_count;
+                    if (data_val_cnt > 0) {
+                        for (uint8_t i = 0; i < data_val_cnt; i++) {
+                            free(message->u.sym_res.sig.data.value_names[i]);
+                        }
+                        free(message->u.sym_res.sig.data.value_names);
+                        for (uint8_t i = 0; i < data_val_cnt; i++) {
+                            fip_free_type(
+                                &message->u.sym_res.sig.data.value_types[i]);
+                        }
+                        free(message->u.sym_res.sig.data.value_types);
+                    }
+                    message->u.sym_res.sig.data.value_count = 0;
+                    break;
+                }
+                case FIP_SYM_ENUM: {
+                    message->u.sym_res.type = FIP_SYM_UNKNOWN;
+                    memset(
+                        message->u.sym_res.sig.enum_t.name, 0,
+                        sizeof(message->u.sym_res.sig.enum_t.name));
+                    message->u.sym_res.sig.enum_t.type = FIP_VOID;
+                    uint8_t enum_val_cnt =
+                        message->u.sym_res.sig.enum_t.value_count;
+                    if (enum_val_cnt > 0) {
+                        for (uint8_t i = 0; i < enum_val_cnt; i++) {
+                            free(message->u.sym_res.sig.enum_t.tags[i]);
+                        }
+                        free(message->u.sym_res.sig.enum_t.tags);
+                        free(message->u.sym_res.sig.enum_t.values);
+                    }
+                    message->u.sym_res.sig.enum_t.value_count = 0;
+                    break;
+                }
             }
             break;
         case FIP_MSG_COMPILE_REQUEST:
@@ -1990,21 +2056,53 @@ void fip_free_msg(fip_msg_t *message) {
                 case FIP_SYM_UNKNOWN:
                     break;
 
-                case FIP_SYM_FUNCTION:
+                case FIP_SYM_FUNCTION: {
+                    fip_sig_fn_t *fn = &message->u.tag_sym_res.sig.fn;
+                    memset(fn->name, 0, sizeof(fn->name));
+                    if (fn->args_len > 0) {
+                        for (uint8_t i = 0; i < fn->args_len; i++) {
+                            fip_free_type(&fn->args[i].type);
+                        }
+                        free(fn->args);
+                    }
+                    fn->args_len = 0;
+                    if (fn->rets_len > 0) {
+                        for (uint8_t i = 0; i < fn->rets_len; i++) {
+                            fip_free_type(&fn->rets[i]);
+                        }
+                        free(fn->rets);
+                    }
+                    fn->rets_len = 0;
                     break;
-
-                case FIP_SYM_DATA:
-
+                }
+                case FIP_SYM_DATA: {
+                    fip_sig_data_t *data = &message->u.tag_sym_res.sig.data;
+                    memset(data->name, 0, sizeof(data->name));
+                    if (data->value_count > 0) {
+                        for (uint8_t i = 0; i < data->value_count; i++) {
+                            free(data->value_names[i]);
+                        }
+                        free(data->value_names);
+                        for (uint8_t i = 0; i < data->value_count; i++) {
+                            fip_free_type(&data->value_types[i]);
+                        }
+                        free(data->value_types);
+                    }
+                    data->value_count = 0;
                     break;
+                }
                 case FIP_SYM_ENUM: {
                     fip_sig_enum_t *enum_t = &message->u.tag_sym_res.sig.enum_t;
                     memset(enum_t->name, 0, sizeof(enum_t->name));
                     enum_t->type = FIP_VOID;
-                    for (uint8_t i = 0; i < enum_t->value_count; i++) {
-                        free(enum_t->tags[i]);
+                    if (enum_t->value_count > 0) {
+                        for (uint8_t i = 0; i < enum_t->value_count; i++) {
+                            free(enum_t->tags[i]);
+                        }
+                        free(enum_t->tags);
+                        free(enum_t->values);
                     }
-                    free(enum_t->tags);
-                    free(enum_t->values);
+                    enum_t->value_count = 0;
                     break;
                 }
             }
