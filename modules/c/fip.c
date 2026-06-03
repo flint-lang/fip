@@ -419,9 +419,6 @@ bool parse_toml_file(toml_result_t toml) {
                         free(sources);
                         goto fail;
                     }
-                    // Substitution of the `__OUTPUT__` string works by hashing
-                    // the first header for now
-                    // TODO: Implement a more sophisticated hashing
                     const char *cache_dir = ".fip/cache/";
                     const size_t cache_dir_len = 11;
 #ifdef __WIN32__
@@ -441,11 +438,18 @@ bool parse_toml_file(toml_result_t toml) {
                         + ext_len             // '.o'
                         + 1;                  // Zero-terminator
 #endif
+                    // Hash the full path `.fip/cache/<tag>` as input so the
+                    // string is always long enough for good hash distribution.
+                    char hash_input[128];
+                    snprintf(                           //
+                        hash_input, sizeof(hash_input), //
+                        "%s%s", cache_dir, cfg->tag     //
+                    );
                     cfg->command[cmd_idx] = (char *)malloc(output_len);
                     char *insert_ptr = cfg->command[cmd_idx];
                     memcpy(insert_ptr, cache_dir, cache_dir_len);
                     insert_ptr += cache_dir_len;
-                    fip_create_hash(insert_ptr, cfg->headers[0]);
+                    fip_create_hash(insert_ptr, hash_input);
                     memcpy(cfg->output, insert_ptr, FIP_PATH_SIZE);
                     insert_ptr += FIP_PATH_SIZE;
                     memcpy(insert_ptr, file_ext, ext_len);
