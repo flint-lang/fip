@@ -5,7 +5,6 @@ const DEFAULT_LLVM_VERSION = "llvmorg-21.1.8";
 
 pub fn build(b: *std.Build) !void {
     const OSTag = enum { linux, windows };
-    _ = b.findProgram(&.{"git"}, &.{}) catch @panic("Git not found on this system");
     _ = b.findProgram(&.{"cmake"}, &.{}) catch @panic("CMake not found on this system");
     _ = b.findProgram(&.{"ninja"}, &.{}) catch @panic("Ninja not found on this system");
     _ = b.findProgram(&.{"python"}, &.{}) catch @panic("Python3 not found on this system");
@@ -13,6 +12,13 @@ pub fn build(b: *std.Build) !void {
 
     const host_target = b.resolveTargetQuery(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const external_llvm_dir = b.option([]const u8, "llvm-dir", "Path to external LLVM installation.");
+
+    if (external_llvm_dir == null) {
+        // Since llvm does not need to be fetched, git is not needed
+        _ = b.findProgram(&.{"git"}, &.{}) catch @panic("Git not found on this system");
+    }
 
     const llvm_version = b.option([]const u8, "llvm-version", b.fmt("LLVM version to use. Default: {s}", .{DEFAULT_LLVM_VERSION})) orelse
         DEFAULT_LLVM_VERSION;
@@ -43,9 +49,10 @@ pub fn build(b: *std.Build) !void {
     });
 
     // Update LLVM
-    const update_llvm = try updateLLVM(b, llvm_version);
+    const update_llvm = if (external_llvm_dir) |_| try makeEmptyStep(b) else try updateLLVM(b, llvm_version);
     // Build LLVM
-    const build_llvm = try buildLLVM(b, &update_llvm.step, target, force_llvm_rebuild, jobs);
+    const llvm_dir = if (external_llvm_dir) |dir| dir else "vendor/sources/llvm-project";
+    const build_llvm = try buildLLVM(b, &update_llvm.step, target, force_llvm_rebuild, jobs, llvm_dir);
     // Build fip-c exe
     try buildFipC(b, &build_llvm.step, target, optimize);
     // Build examples
@@ -193,7 +200,7 @@ fn buildExamples(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
     });
 }
 
-fn buildLLVM(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.ResolvedTarget, force_rebuild: bool, jobs: usize) !*std.Build.Step.Run {
+fn buildLLVM(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.ResolvedTarget, force_rebuild: bool, jobs: usize, llvm_dir: []const u8) !*std.Build.Step.Run {
     const build_name: []const u8 = switch (target.result.os.tag) {
         .linux => "linux",
         .windows => "mingw",
@@ -220,7 +227,7 @@ fn buildLLVM(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.Re
     const setup_llvm = b.addSystemCommand(&[_][]const u8{
         "cmake",
         "-S",
-        "vendor/sources/llvm-project/llvm",
+        b.fmt("{s}/llvm", .{llvm_dir}),
         "-B",
         llvm_build_dir,
         "-G",
