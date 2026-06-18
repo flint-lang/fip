@@ -55,8 +55,10 @@ pub fn build(b: *std.Build) !void {
     const build_llvm = try buildLLVM(b, &update_llvm.step, target, force_llvm_rebuild, jobs, llvm_dir);
     // Build fip-c exe
     try buildFipC(b, &build_llvm.step, target, optimize);
-    // Build examples
-    try buildExamples(b, target, optimize);
+    // Build examples only if no external llvm dir is provided (to not build examples for nix)
+    if (external_llvm_dir == null) {
+        try buildExamples(b, target, optimize);
+    }
 }
 
 fn buildFipC(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) !void {
