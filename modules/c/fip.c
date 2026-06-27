@@ -705,22 +705,29 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
 
     fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
 
-    // Check if the original type is a typedef resolving to void*
-    // (named opaque type like `typedef void* GLFrame;`)
-    if (clang_type.kind == CXType_Typedef && canonical.kind == CXType_Pointer) {
+    // Check if the type resolves to a pointer-to-void (named opaque or anonymous void*)
+    // libclang sets the CXType kind from the canonical type's class, so a
+    // `typedef void* NamedOpaque` has kind CXType_Pointer (not CXType_Typedef).
+    // Use clang_getTypeSpelling to recover the original name in that case.
+    if (canonical.kind == CXType_Pointer) {
         CXType pointee = clang_getPointeeType(canonical);
         if (clang_getCanonicalType(pointee).kind == CXType_Void) {
-            CXString typedef_name = clang_getTypeSpelling(clang_type);
-            const char *name_cstr = clang_getCString(typedef_name);
-            const size_t name_len = strlen(name_cstr);
-            fip_print(ID, FIP_TRACE, "Detected opaque type: '%s'", name_cstr);
-            fip_type->type = FIP_TYPE_OPAQUE;
-            memset(fip_type->u.opaque.name, 0, sizeof(fip_type->u.opaque.name));
-            if (name_len > 0) {
-                memcpy(fip_type->u.opaque.name, name_cstr, name_len);
+            CXString type_spelling = clang_getTypeSpelling(clang_type);
+            const char *spelling = clang_getCString(type_spelling);
+            bool is_anonymous_void_ptr = (strcmp(spelling, "void *") == 0 || strcmp(spelling, "void*") == 0);
+            if (!is_anonymous_void_ptr) {
+                const size_t name_len = strlen(spelling);
+                fip_print(ID, FIP_TRACE, "Detected opaque type: '%s'", spelling);
+                fip_type->type = FIP_TYPE_OPAQUE;
+                memset(fip_type->u.opaque.name, 0, sizeof(fip_type->u.opaque.name));
+                if (name_len > 0) {
+                    memcpy(fip_type->u.opaque.name, spelling, name_len);
+                }
+                clang_disposeString(type_spelling);
+                return true;
             }
-            clang_disposeString(typedef_name);
-            return true;
+            clang_disposeString(type_spelling);
+            // Anonymous void*: fall through to normal CXType_Pointer handling in the switch
         }
     }
 
@@ -787,7 +794,7 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
             fip_type->u.prim = FIP_VOID;
             goto ok;
         case CXType_Pointer: {
-            CXType pointee = clang_getPointeeType(canonical);
+            CXType pointee = clang_getPointeeType(clang_type);
             if (pointee.kind == CXType_Char_S || pointee.kind == CXType_SChar) {
                 // char* -> treat as C string
                 fip_type->is_mutable = !clang_isConstQualifiedType(pointee);
