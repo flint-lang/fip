@@ -239,6 +239,12 @@ typedef struct {
     size_t *values;
 } fip_type_enum_t;
 
+/// @typedef `fip_type_opaque_t`
+/// @brief The struct representing a named opaque type
+typedef struct {
+    char name[128];
+} fip_type_opaque_t;
+
 /// @typedef `fip_type_array_t`
 /// @brief The struct representing fixed-size arrays
 typedef struct {
@@ -255,6 +261,7 @@ typedef enum fip_type_e : uint8_t {
     FIP_TYPE_RECURSIVE,
     FIP_TYPE_ENUM,
     FIP_TYPE_ARRAY,
+    FIP_TYPE_OPAQUE,
 } fip_type_e;
 
 /// @typedef `fip_type_t`
@@ -269,6 +276,7 @@ typedef struct fip_type_t {
         fip_type_recursive_t recursive;
         fip_type_enum_t enum_t;
         fip_type_array_t array;
+        fip_type_opaque_t opaque;
     } u;
 } fip_type_t;
 
@@ -1330,6 +1338,15 @@ void fip_encode_type(          //
             *idx += sizeof(size_t);
             fip_encode_type(buffer, idx, type->u.array.base_type);
             break;
+        case FIP_TYPE_OPAQUE: {
+            const uint8_t type_name_len = strlen(type->u.opaque.name);
+            buffer[(*idx)++] = type_name_len;
+            if (type_name_len > 0) {
+                memcpy(buffer + *idx, type->u.opaque.name, type_name_len);
+                *idx += type_name_len;
+            }
+            break;
+        }
     }
 }
 
@@ -1663,6 +1680,15 @@ void fip_decode_type(                //
             type->u.array.base_type = (fip_type_t *)malloc(sizeof(fip_type_t));
             fip_decode_type(buffer, idx, type->u.array.base_type);
             break;
+        case FIP_TYPE_OPAQUE: {
+            const uint8_t type_name_len = buffer[(*idx)++];
+            memset(type->u.opaque.name, 0, sizeof(type->u.opaque.name));
+            if (type_name_len > 0) {
+                memcpy(type->u.opaque.name, buffer + *idx, type_name_len);
+                *idx += type_name_len;
+            }
+            break;
+        }
     }
 }
 
@@ -1969,6 +1995,8 @@ void fip_free_type(fip_type_t *type) {
         case FIP_TYPE_ARRAY:
             fip_free_type(type->u.array.base_type);
             free(type->u.array.base_type);
+            break;
+        case FIP_TYPE_OPAQUE:
             break;
     }
 }
@@ -2465,6 +2493,12 @@ void fip_print_type(           //
             *idx += wrote;
             buffer[(*idx)++] = ']';
             break;
+        case FIP_TYPE_OPAQUE: {
+            const size_t name_len = strlen(type->u.opaque.name);
+            memcpy(buffer + *idx, type->u.opaque.name, name_len);
+            *idx += name_len;
+            break;
+        }
     }
 }
 
@@ -2662,6 +2696,14 @@ void fip_clone_type(fip_type_t *dest, const fip_type_t *src) {
             dest->u.array.base_type = (fip_type_t *)malloc(sizeof(fip_type_t));
             fip_clone_type(dest->u.array.base_type, src->u.array.base_type);
             break;
+        case FIP_TYPE_OPAQUE: {
+            const uint8_t type_name_len = strlen(src->u.opaque.name);
+            memset(dest->u.opaque.name, 0, sizeof(dest->u.opaque.name));
+            if (type_name_len > 0) {
+                memcpy(dest->u.opaque.name, src->u.opaque.name, type_name_len);
+            }
+            break;
+        }
     }
 }
 

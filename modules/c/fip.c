@@ -705,6 +705,25 @@ bool clang_type_to_fip_type(CXType clang_type, fip_type_t *fip_type) {
 
     fip_type->is_mutable = !clang_isConstQualifiedType(clang_type);
 
+    // Check if the original type is a typedef resolving to void*
+    // (named opaque type like `typedef void* GLFrame;`)
+    if (clang_type.kind == CXType_Typedef && canonical.kind == CXType_Pointer) {
+        CXType pointee = clang_getPointeeType(canonical);
+        if (clang_getCanonicalType(pointee).kind == CXType_Void) {
+            CXString typedef_name = clang_getTypeSpelling(clang_type);
+            const char *name_cstr = clang_getCString(typedef_name);
+            const size_t name_len = strlen(name_cstr);
+            fip_print(ID, FIP_TRACE, "Detected opaque type: '%s'", name_cstr);
+            fip_type->type = FIP_TYPE_OPAQUE;
+            memset(fip_type->u.opaque.name, 0, sizeof(fip_type->u.opaque.name));
+            if (name_len > 0) {
+                memcpy(fip_type->u.opaque.name, name_cstr, name_len);
+            }
+            clang_disposeString(typedef_name);
+            return true;
+        }
+    }
+
     int found = stack_find_equal(&stack, canonical);
     if (found >= 0) {
         fip_type->type = FIP_TYPE_RECURSIVE;
