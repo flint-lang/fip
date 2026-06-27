@@ -171,6 +171,7 @@ typedef enum fip_msg_symbol_type_e : uint8_t {
     FIP_SYM_FUNCTION,
     FIP_SYM_DATA,
     FIP_SYM_ENUM,
+    FIP_SYM_OPAQUE,
 } fip_msg_symbol_type_e;
 
 /// @typedef `fip_log_level_e`
@@ -315,12 +316,19 @@ typedef struct {
     size_t *values;
 } fip_sig_enum_t;
 
+/// @typedef `fip_sig_opaque_t`
+/// @brief Struct representing the signature of a FIP-defined named opaque type
+typedef struct {
+    char name[128];
+} fip_sig_opaque_t;
+
 /// @typedef `fip_sig_u`
 /// @brief Union of all possible signatures defined in FIP
 typedef union {
     fip_sig_fn_t fn;
     fip_sig_data_t data;
     fip_sig_enum_t enum_t;
+    fip_sig_opaque_t opaque;
 } fip_sig_u;
 
 /// @typedef `fip_sig_t`
@@ -582,6 +590,13 @@ void fip_print_sig_data(uint32_t id, const fip_sig_data_t *sig);
 /// @param `sig` The enum signature to print
 void fip_print_sig_enum(uint32_t id, const fip_sig_enum_t *sig);
 
+/// @function `fip_print_sig_opaque`
+/// @brief Prints a parsed opaque type signature to the console
+///
+/// @param `id` The id of the process in which the signature is printed
+/// @param `sig` The opaque signature to print
+void fip_print_sig_opaque(uint32_t id, const fip_sig_opaque_t *sig);
+
 /// @function `fip_clone_sig_fn`
 /// @brief Clones a given function signature from the source to the destination
 ///
@@ -602,6 +617,13 @@ void fip_clone_sig_data(fip_sig_data_t *dest, const fip_sig_data_t *src);
 /// @brief `dest` The signature to fill
 /// @brief `src` The source to clone
 void fip_clone_sig_enum(fip_sig_enum_t *dest, const fip_sig_enum_t *src);
+
+/// @function `fip_clone_sig_opaque`
+/// @brief Clones a given opaque signature from the source to the destination
+///
+/// @brief `dest` The signature to fill
+/// @brief `src` The source to clone
+void fip_clone_sig_opaque(fip_sig_opaque_t *dest, const fip_sig_opaque_t *src);
 
 /// @function `fip_clone_type`
 /// @brief Clones a given type from the source to the destination
@@ -1105,6 +1127,10 @@ void fip_print_msg(uint32_t id, const fip_msg_t *message) {
                     fip_print(id, FIP_DEBUG, "  .type: ENUM");
                     fip_print(id, FIP_DEBUG, "  .signature: TODO");
                     break;
+                case FIP_SYM_OPAQUE:
+                    fip_print(id, FIP_DEBUG, "  .type: OPAQUE");
+                    fip_print(id, FIP_DEBUG, "  .signature: TODO");
+                    break;
             }
             fip_print(id, FIP_DEBUG, "}");
             break;
@@ -1134,6 +1160,12 @@ void fip_print_msg(uint32_t id, const fip_msg_t *message) {
                     fip_print(id, FIP_DEBUG, "  .type: ENUM");
                     fip_print(id, FIP_DEBUG, "  .signature: {");
                     fip_print_sig_enum(id, &message->u.sym_res.sig.enum_t);
+                    fip_print(id, FIP_DEBUG, "  }");
+                    break;
+                case FIP_SYM_OPAQUE:
+                    fip_print(id, FIP_DEBUG, "  .type: OPAQUE");
+                    fip_print(id, FIP_DEBUG, "  .signature: {");
+                    fip_print_sig_opaque(id, &message->u.sym_res.sig.opaque);
                     fip_print(id, FIP_DEBUG, "  }");
                     break;
             }
@@ -1218,6 +1250,12 @@ void fip_print_msg(uint32_t id, const fip_msg_t *message) {
                         fip_print(id, FIP_DEBUG, "  .type: ENUM");
                         fip_print_sig_enum(                        //
                             id, &message->u.tag_sym_res.sig.enum_t //
+                        );
+                        break;
+                    case FIP_SYM_OPAQUE:
+                        fip_print(id, FIP_DEBUG, "  .type: OPAQUE");
+                        fip_print_sig_opaque(                      //
+                            id, &message->u.tag_sym_res.sig.opaque //
                         );
                         break;
                 }
@@ -1383,6 +1421,19 @@ void fip_encode_sig_enum(      //
     }
 }
 
+void fip_encode_sig_opaque(     //
+    char buffer[FIP_MSG_SIZE],  //
+    uint32_t *idx,              //
+    const fip_sig_opaque_t *sig //
+) {
+    const uint8_t name_len = strlen(sig->name);
+    buffer[(*idx)++] = name_len;
+    if (name_len > 0) {
+        memcpy(buffer + *idx, sig->name, name_len);
+        *idx += name_len;
+    }
+}
+
 void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
     // Clear the buffer
     memset(buffer, 0, FIP_MSG_SIZE);
@@ -1420,6 +1471,12 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
                     break;
                 case FIP_SYM_ENUM:
                     break;
+                case FIP_SYM_OPAQUE:
+                    fip_encode_sig_opaque(             //
+                        buffer, &idx,                  //
+                        &message->u.sym_req.sig.opaque //
+                    );
+                    break;
             }
             break;
         case FIP_MSG_SYMBOL_RESPONSE:
@@ -1443,9 +1500,15 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
                     );
                     break;
                 case FIP_SYM_ENUM:
-                    fip_encode_sig_enum(                   //
-                        buffer, &idx,                      //
-                        &message->u.tag_sym_res.sig.enum_t //
+                    fip_encode_sig_enum(               //
+                        buffer, &idx,                  //
+                        &message->u.sym_res.sig.enum_t //
+                    );
+                    break;
+                case FIP_SYM_OPAQUE:
+                    fip_encode_sig_opaque(             //
+                        buffer, &idx,                  //
+                        &message->u.sym_res.sig.opaque //
                     );
                     break;
             }
@@ -1516,6 +1579,12 @@ void fip_encode_msg(char buffer[FIP_MSG_SIZE], const fip_msg_t *message) {
                         fip_encode_sig_enum(                   //
                             buffer, &idx,                      //
                             &message->u.tag_sym_res.sig.enum_t //
+                        );
+                        break;
+                    case FIP_SYM_OPAQUE:
+                        fip_encode_sig_opaque(                 //
+                            buffer, &idx,                      //
+                            &message->u.tag_sym_res.sig.opaque //
                         );
                         break;
                 }
@@ -1705,6 +1774,19 @@ void fip_decode_sig_enum(            //
     }
 }
 
+void fip_decode_sig_opaque(          //
+    const char buffer[FIP_MSG_SIZE], //
+    uint32_t *idx,                   //
+    fip_sig_opaque_t *sig            //
+) {
+    const uint8_t name_len = buffer[(*idx)++];
+    memset(sig->name, 0, sizeof(sig->name));
+    if (name_len > 0) {
+        memcpy(sig->name, buffer + *idx, name_len);
+        *idx += name_len;
+    }
+}
+
 void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
     memset(message, 0, sizeof(fip_msg_t));
     uint32_t idx = 0;
@@ -1741,6 +1823,11 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
                         buffer, &idx, &message->u.sym_req.sig.enum_t //
                     );
                     break;
+                case FIP_SYM_OPAQUE:
+                    fip_decode_sig_opaque(                           //
+                        buffer, &idx, &message->u.sym_req.sig.opaque //
+                    );
+                    break;
             }
             break;
         case FIP_MSG_SYMBOL_RESPONSE:
@@ -1767,6 +1854,11 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
                 case FIP_SYM_ENUM:
                     fip_decode_sig_enum(                             //
                         buffer, &idx, &message->u.sym_res.sig.enum_t //
+                    );
+                    break;
+                case FIP_SYM_OPAQUE:
+                    fip_decode_sig_opaque(                           //
+                        buffer, &idx, &message->u.sym_res.sig.opaque //
                     );
                     break;
             }
@@ -1835,6 +1927,12 @@ void fip_decode_msg(const char buffer[FIP_MSG_SIZE], fip_msg_t *message) {
                         fip_decode_sig_enum(                   //
                             buffer, &idx,                      //
                             &message->u.tag_sym_res.sig.enum_t //
+                        );
+                        break;
+                    case FIP_SYM_OPAQUE:
+                        fip_decode_sig_opaque(                 //
+                            buffer, &idx,                      //
+                            &message->u.tag_sym_res.sig.opaque //
                         );
                         break;
                 }
@@ -1919,8 +2017,7 @@ void fip_free_msg(fip_msg_t *message) {
                 }
                 case FIP_SYM_DATA: {
                     message->u.sym_req.type = FIP_SYM_UNKNOWN;
-                    memset(
-                        message->u.sym_req.sig.data.name, 0,
+                    memset(message->u.sym_req.sig.data.name, 0,
                         sizeof(message->u.sym_req.sig.data.name));
                     uint8_t data_val_cnt =
                         message->u.sym_req.sig.data.value_count;
@@ -1940,8 +2037,7 @@ void fip_free_msg(fip_msg_t *message) {
                 }
                 case FIP_SYM_ENUM: {
                     message->u.sym_req.type = FIP_SYM_UNKNOWN;
-                    memset(
-                        message->u.sym_req.sig.enum_t.name, 0,
+                    memset(message->u.sym_req.sig.enum_t.name, 0,
                         sizeof(message->u.sym_req.sig.enum_t.name));
                     message->u.sym_req.sig.enum_t.type = FIP_VOID;
                     uint8_t enum_val_cnt =
@@ -1954,6 +2050,12 @@ void fip_free_msg(fip_msg_t *message) {
                         free(message->u.sym_req.sig.enum_t.values);
                     }
                     message->u.sym_req.sig.enum_t.value_count = 0;
+                    break;
+                }
+                case FIP_SYM_OPAQUE: {
+                    message->u.sym_req.type = FIP_SYM_UNKNOWN;
+                    memset(message->u.sym_req.sig.opaque.name, 0,
+                        sizeof(message->u.sym_req.sig.opaque.name));
                     break;
                 }
             }
@@ -1993,8 +2095,7 @@ void fip_free_msg(fip_msg_t *message) {
                 }
                 case FIP_SYM_DATA: {
                     message->u.sym_res.type = FIP_SYM_UNKNOWN;
-                    memset(
-                        message->u.sym_res.sig.data.name, 0,
+                    memset(message->u.sym_res.sig.data.name, 0,
                         sizeof(message->u.sym_res.sig.data.name));
                     uint8_t data_val_cnt =
                         message->u.sym_res.sig.data.value_count;
@@ -2014,8 +2115,7 @@ void fip_free_msg(fip_msg_t *message) {
                 }
                 case FIP_SYM_ENUM: {
                     message->u.sym_res.type = FIP_SYM_UNKNOWN;
-                    memset(
-                        message->u.sym_res.sig.enum_t.name, 0,
+                    memset(message->u.sym_res.sig.enum_t.name, 0,
                         sizeof(message->u.sym_res.sig.enum_t.name));
                     message->u.sym_res.sig.enum_t.type = FIP_VOID;
                     uint8_t enum_val_cnt =
@@ -2028,6 +2128,12 @@ void fip_free_msg(fip_msg_t *message) {
                         free(message->u.sym_res.sig.enum_t.values);
                     }
                     message->u.sym_res.sig.enum_t.value_count = 0;
+                    break;
+                }
+                case FIP_SYM_OPAQUE: {
+                    message->u.sym_res.type = FIP_SYM_UNKNOWN;
+                    memset(message->u.sym_res.sig.opaque.name, 0,
+                        sizeof(message->u.sym_res.sig.opaque.name));
                     break;
                 }
             }
@@ -2105,6 +2211,12 @@ void fip_free_msg(fip_msg_t *message) {
                     enum_t->value_count = 0;
                     break;
                 }
+                case FIP_SYM_OPAQUE: {
+                    fip_sig_opaque_t *opaque =
+                        &message->u.tag_sym_res.sig.opaque;
+                    memset(opaque->name, 0, sizeof(opaque->name));
+                    break;
+                }
             }
             message->u.tag_sym_res.type = FIP_SYM_UNKNOWN;
             break;
@@ -2170,6 +2282,11 @@ void fip_free_sig_list(fip_sig_list_t *list) {
                 e->value_count = 0;
                 e->values = NULL;
                 e->tags = NULL;
+                break;
+            }
+            case FIP_SYM_OPAQUE: {
+                fip_sig_opaque_t *o = &list->sigs[i].sig.opaque;
+                memset(o->name, 0, sizeof(o->name));
                 break;
             }
         }
@@ -2410,6 +2527,11 @@ void fip_print_sig_enum(uint32_t id, const fip_sig_enum_t *sig) {
     }
 }
 
+void fip_print_sig_opaque(uint32_t id, const fip_sig_opaque_t *sig) {
+    fip_print(id, FIP_DEBUG, "  Opaque Signature:");
+    fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
+}
+
 void fip_clone_sig_fn(fip_sig_fn_t *dest, const fip_sig_fn_t *src) {
     memcpy(dest->name, src->name, sizeof(src->name));
     dest->args_len = src->args_len;
@@ -2474,6 +2596,10 @@ void fip_clone_sig_enum(fip_sig_enum_t *dest, const fip_sig_enum_t *src) {
         dest->values = (size_t *)malloc(values_size);
         memcpy(dest->values, src->values, values_size);
     }
+}
+
+void fip_clone_sig_opaque(fip_sig_opaque_t *dest, const fip_sig_opaque_t *src) {
+    memcpy(dest->name, src->name, sizeof(src->name));
 }
 
 void fip_clone_type(fip_type_t *dest, const fip_type_t *src) {
@@ -2956,6 +3082,13 @@ fip_tag_request_result_t fip_master_tag_request( //
                 fip_clone_sig_enum( //
                     &last_sig->sig.enum_t,
                     &incoming.u.tag_sym_res.sig.enum_t //
+                );
+                break;
+            }
+            case FIP_SYM_OPAQUE: {
+                fip_clone_sig_opaque(                  //
+                    &last_sig->sig.opaque,             //
+                    &incoming.u.tag_sym_res.sig.opaque //
                 );
                 break;
             }

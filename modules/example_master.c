@@ -110,6 +110,10 @@ int main() {
                         fip_print_sig_enum(0,
                             &sig_list.list->sigs[i].sig.enum_t);
                         break;
+                    case FIP_SYM_OPAQUE:
+                        fip_print_sig_opaque(0,
+                            &sig_list.list->sigs[i].sig.opaque);
+                        break;
                 }
             }
             break;

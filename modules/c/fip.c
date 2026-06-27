@@ -66,6 +66,7 @@ typedef struct {
         fip_sig_fn_t fn;
         fip_sig_data_t data;
         fip_sig_enum_t enum_t;
+        fip_sig_opaque_t opaque;
     } sig;
 } fip_c_symbol_t;
 
@@ -574,6 +575,9 @@ static bool symbol_name_exists(const char *name) {
                 break;
             case FIP_SYM_ENUM:
                 existing_name = curr_coll->symbols[i].sig.enum_t.name;
+                break;
+            case FIP_SYM_OPAQUE:
+                existing_name = curr_coll->symbols[i].sig.opaque.name;
                 break;
             default:
                 continue;
@@ -1401,6 +1405,64 @@ enum CXChildVisitResult visit_ast_node( //
             }
             break;
         }
+        case CXCursor_TypedefDecl: {
+            if (curr_coll->symbol_count >= MAX_SYMBOLS) {
+                fip_print(                                                 //
+                    ID, FIP_WARN,                                          //
+                    "Maximum symbols reached, skipping remaining typedefs" //
+                );
+                return CXChildVisit_Break;
+            }
+
+            // Check if this typedef is an opaque type (typedef void* NAME)
+            CXType underlying = clang_getTypedefDeclUnderlyingType(cursor);
+            CXType canonical = clang_getCanonicalType(underlying);
+            bool is_opaque = false;
+            if (canonical.kind == CXType_Pointer) {
+                CXType pointee = clang_getPointeeType(canonical);
+                CXType pointee_canonical = clang_getCanonicalType(pointee);
+                if (pointee_canonical.kind == CXType_Void) {
+                    is_opaque = true;
+                }
+            }
+
+            if (!is_opaque) {
+                return CXChildVisit_Recurse;
+            }
+
+            CXString typedef_name = clang_getCursorSpelling(cursor);
+            const char *name_cstr = clang_getCString(typedef_name);
+            if (strlen(name_cstr) == 0) {
+                clang_disposeString(typedef_name);
+                return CXChildVisit_Continue;
+            }
+
+            // Extract opaque type information
+            fip_c_symbol_t symbol = {0};
+            strncpy(                                //
+                symbol.source_file_path, file_path, //
+                sizeof(symbol.source_file_path) - 1 //
+            );
+            symbol.line_number = (int)line;
+            symbol.type = FIP_SYM_OPAQUE;
+
+            strncpy(                               //
+                symbol.sig.opaque.name, name_cstr, //
+                sizeof(symbol.sig.opaque.name) - 1 //
+            );
+            symbol.sig.opaque.name[sizeof(symbol.sig.opaque.name) - 1] = '\0';
+            clang_disposeString(typedef_name);
+
+            if (!symbol_name_exists(symbol.sig.opaque.name)) {
+                curr_coll->symbols[curr_coll->symbol_count] = symbol;
+                fip_print(                                              //
+                    ID, FIP_INFO, "Found opaque type: '%s' at line %d", //
+                    symbol.sig.opaque.name, symbol.line_number          //
+                );
+                curr_coll->symbol_count++;
+            }
+            break;
+        }
     }
 
     return CXChildVisit_Recurse;
@@ -1615,6 +1677,43 @@ void handle_enum_symbol_request(             //
     sym_res->found = sym_match;
 }
 
+void handle_opaque_symbol_request(           //
+    const fip_msg_t *message,                //
+    fip_msg_symbol_response_t *const sym_res //
+) {
+    assert(message->u.sym_req.type == FIP_SYM_OPAQUE);
+    const fip_sig_opaque_t *msg_opaque = &message->u.sym_req.sig.opaque;
+    sym_res->type = FIP_SYM_OPAQUE;
+
+    bool sym_match = false;
+    fip_print(ID, FIP_DEBUG, "symbol_list.count=%lu", symbol_list.count);
+    for (size_t i = 0; i < symbol_list.count; i++) {
+        fip_c_symbol_collection_t *const collection =
+            &symbol_list.collection[i];
+        fip_print(ID, FIP_DEBUG, "collection->symbol_count=%lu",
+            collection->symbol_count);
+        for (size_t j = 0; j < collection->symbol_count; j++) {
+            const fip_c_symbol_t *symbol = &collection->symbols[j];
+            if (symbol->type != FIP_SYM_OPAQUE) {
+                continue;
+            }
+            fip_print(ID, FIP_DEBUG, "Checking opaque");
+            const fip_sig_opaque_t *sym_opaque = &symbol->sig.opaque;
+            if (strcmp(sym_opaque->name, msg_opaque->name) == 0) {
+                sym_match = true;
+                collection->needed = true;
+                fip_clone_sig_opaque(&sym_res->sig.opaque, sym_opaque);
+                memcpy(sym_res->sig.opaque.name, sym_opaque->name, 128);
+                break;
+            }
+        }
+        if (sym_match) {
+            break;
+        }
+    }
+    sym_res->found = sym_match;
+}
+
 void handle_symbol_request(    //
     char buffer[FIP_MSG_SIZE], //
     const fip_msg_t *message   //
@@ -1641,6 +1740,9 @@ void handle_symbol_request(    //
             break;
         case FIP_SYM_ENUM:
             handle_enum_symbol_request(message, sym_res);
+            break;
+        case FIP_SYM_OPAQUE:
+            handle_opaque_symbol_request(message, sym_res);
             break;
     }
     fip_slave_send_message(ID, buffer, &response);
@@ -1862,6 +1964,12 @@ void handle_tag_request(       //
                 fip_clone_sig_enum(                     //
                     &response.u.tag_sym_res.sig.enum_t, //
                     &sym->sig.enum_t                    //
+                );
+                break;
+            case FIP_SYM_OPAQUE:
+                fip_clone_sig_opaque(                   //
+                    &response.u.tag_sym_res.sig.opaque, //
+                    &sym->sig.opaque                    //
                 );
                 break;
         }
