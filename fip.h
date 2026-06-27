@@ -2483,7 +2483,7 @@ void fip_print_type(           //
             buffer[(*idx)++] = '}';
             break;
         }
-        case FIP_TYPE_ARRAY:
+        case FIP_TYPE_ARRAY: {
             fip_print_type(buffer, idx, type->u.array.base_type);
             buffer[(*idx)++] = '[';
             int wrote = snprintf(&buffer[*idx], 20, "%lu", type->u.array.size);
@@ -2493,6 +2493,7 @@ void fip_print_type(           //
             *idx += wrote;
             buffer[(*idx)++] = ']';
             break;
+        }
         case FIP_TYPE_OPAQUE: {
             const size_t name_len = strlen(type->u.opaque.name);
             memcpy(buffer + *idx, type->u.opaque.name, name_len);
