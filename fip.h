@@ -3279,11 +3279,8 @@ bool fip_spawn_interop_module(      //
     const char *root_path,          //
     const char *module              //
 ) {
-    char _module[256] = {0};
     char id[8] = {0};
     char ll[8] = {0};
-    strcpy(_module, module);
-    strcat(_module, ".exe"); // Add .exe extension
     snprintf(id, 8, "%d", modules->active_count + 1);
     snprintf(ll, 8, "%d", LOG_LEVEL);
 
@@ -3309,7 +3306,7 @@ bool fip_spawn_interop_module(      //
 
     // Create command line
     char cmdline[512];
-    snprintf(cmdline, sizeof(cmdline), "\"%s\" %s %s", _module, id, ll);
+    snprintf(cmdline, sizeof(cmdline), "\"%s\" %s %s", module, id, ll);
 
     STARTUPINFOA si = {0};
     PROCESS_INFORMATION pi = {0};
@@ -3319,12 +3316,12 @@ bool fip_spawn_interop_module(      //
     si.hStdOutput = stdout_write;
     si.hStdError = stderr_write;
 
-    if (!CreateProcessA( //
-            NULL, cmdline, NULL, NULL, TRUE, 0, NULL, root_path, &si,
-            &pi) //
+    if (!CreateProcessA(                                                   //
+            NULL, cmdline, NULL, NULL, TRUE, 0, NULL, root_path, &si, &pi) //
     ) {
-        fip_print(0, FIP_WARN, "Failed to spawn slave %s: %d", id,
-            GetLastError());
+        fip_print(                                                          //
+            0, FIP_WARN, "Failed to spawn slave %s: %d", id, GetLastError() //
+        );
         CloseHandle(stdin_read);
         CloseHandle(stdin_write);
         CloseHandle(stdout_read);
