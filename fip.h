@@ -2486,7 +2486,7 @@ void fip_print_type(           //
         case FIP_TYPE_ARRAY: {
             fip_print_type(buffer, idx, type->u.array.base_type);
             buffer[(*idx)++] = '[';
-            int wrote = snprintf(&buffer[*idx], 20, "%lu", type->u.array.size);
+            int wrote = snprintf(&buffer[*idx], 20, "%llu", type->u.array.size);
             if (wrote < 0) {
                 wrote = 0;
             }
