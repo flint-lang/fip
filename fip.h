@@ -106,8 +106,8 @@ static void msleep(unsigned int ms) {
 
 // The version of the FIP
 #define FIP_MAJOR 0
-#define FIP_MINOR 3
-#define FIP_PATCH 2
+#define FIP_MINOR 4
+#define FIP_PATCH 0
 
 #define FIP_MAX_MODULE_NAME_LEN 16
 
@@ -2486,7 +2486,8 @@ void fip_print_type(           //
         case FIP_TYPE_ARRAY: {
             fip_print_type(buffer, idx, type->u.array.base_type);
             buffer[(*idx)++] = '[';
-            int wrote = snprintf(&buffer[*idx], 20, "%llu", type->u.array.size);
+            unsigned long long arr_len = (unsigned long long)type->u.array.size;
+            int wrote = snprintf(&buffer[*idx], 20, "%llu", arr_len);
             if (wrote < 0) {
                 wrote = 0;
             }
