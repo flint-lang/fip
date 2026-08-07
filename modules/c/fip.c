@@ -93,6 +93,11 @@ typedef struct {
     /// (or more) symbol(s) of that module are used then the whole module is
     /// compiled and returned.
     bool needed;
+    /// @var `errored`
+    /// @brief Whether parsing of this collection's headers failed (for example
+    /// because a header file does not exist). An errored collection is never
+    /// reported as present to the master.
+    bool errored;
     char tag[128];
     size_t symbol_count;
     fip_c_symbol_t symbols[MAX_SYMBOLS];
@@ -1506,7 +1511,18 @@ enum CXChildVisitResult visit_ast_node( //
     return CXChildVisit_Recurse;
 }
 
-void parse_c_file(char *c_file) {
+bool parse_c_file(char *c_file) {
+    // Check if file exists at all
+#ifdef _WIN32
+    if (_access(c_file, 0) != 0) {
+#else
+    if (access(c_file, F_OK) != 0) {
+#endif
+        fip_print(ID, FIP_WARN, "Header file '%s' does not exist, skipping",
+            c_file);
+        return false;
+    }
+
     CXIndex index = clang_createIndex(0, 0);
     FILE *fp = popen("gcc -print-file-name=include", "r");
     char buf[512];
@@ -1534,7 +1550,8 @@ void parse_c_file(char *c_file) {
 
     if (unit == NULL) {
         fip_print(ID, FIP_WARN, "Unable to parse file %s", c_file);
-        return;
+        clang_disposeIndex(index);
+        return false;
     }
 
     fip_print(                                                             //
@@ -1552,6 +1569,7 @@ void parse_c_file(char *c_file) {
         ID, FIP_INFO, "Found %d symbols in %s", //
         curr_coll->symbol_count, c_file         //
     );
+    return true;
 }
 
 void handle_function_symbol_request(         //
@@ -1942,6 +1960,18 @@ void handle_tag_request(       //
             break;
         }
     }
+
+    // If tag exists but its headers failed to parse, reject it
+    if (is_present) {
+        fip_c_symbol_collection_t *coll = &symbol_list.collection[coll_id];
+        if (coll->errored) {
+            fip_print(                                                     //
+                ID, FIP_ERROR, "Tag '%s' headers failed to parse", msg_tag //
+            );
+            is_present = false;
+        }
+    }
+
     response.u.tag_pres_res.is_present = is_present;
     fip_slave_send_message(ID, buffer, &response);
     fip_free_msg(&response);
@@ -2125,6 +2155,7 @@ send:
         curr_coll = &symbol_list.collection[i];
         strcpy(curr_coll->tag, config->tag);
         curr_coll->symbol_count = 0;
+        curr_coll->errored = false;
 
         fip_print(ID, FIP_DEBUG, "[%s]", config->tag);
         for (size_t j = 0; j < config->headers_len; j++) {
@@ -2133,7 +2164,9 @@ send:
                 ID, FIP_DEBUG, "parsing header '%s'...", config->headers[j] //
             );
             clock_t start = clock();
-            parse_c_file(config->headers[j]);
+            if (!parse_c_file(config->headers[j])) {
+                curr_coll->errored = true;
+            }
             clock_t end = clock();
             double parse_time = ((double)(end - start)) / CLOCKS_PER_SEC;
             fip_print(ID, FIP_DEBUG, "parsing '%s' took %f s",
