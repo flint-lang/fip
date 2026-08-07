@@ -3344,9 +3344,40 @@ bool fip_spawn_interop_module(      //
     si.hStdOutput = stdout_write;
     si.hStdError = stderr_write;
 
-    if (!CreateProcessA(                                                   //
-            NULL, cmdline, NULL, NULL, TRUE, 0, NULL, root_path, &si, &pi) //
-    ) {
+    HANDLE parent_std[3];
+    DWORD parent_std_flags[3];
+    int parent_std_count = 0;
+    const HANDLE parent_std_ids[3] = {
+        GetStdHandle(STD_INPUT_HANDLE),
+        GetStdHandle(STD_OUTPUT_HANDLE),
+        GetStdHandle(STD_ERROR_HANDLE),
+    };
+    for (int i = 0; i < 3; i++) {
+        if (                                             //
+            parent_std_ids[i] == NULL                    //
+            || parent_std_ids[i] == INVALID_HANDLE_VALUE //
+        ) {
+            continue;
+        }
+        DWORD flags = 0;
+        if (GetHandleInformation(parent_std_ids[i], &flags)) {
+            parent_std[parent_std_count] = parent_std_ids[i];
+            parent_std_flags[parent_std_count] = flags;
+            parent_std_count++;
+            SetHandleInformation(parent_std_ids[i], HANDLE_FLAG_INHERIT, 0);
+        }
+    }
+
+    bool spawned = CreateProcessA(                                    //
+        NULL, cmdline, NULL, NULL, TRUE, 0, NULL, root_path, &si, &pi //
+    );
+    for (int i = 0; i < parent_std_count; i++) {
+        SetHandleInformation(                         //
+            parent_std[i], HANDLE_FLAG_INHERIT,       //
+            parent_std_flags[i] & HANDLE_FLAG_INHERIT //
+        );
+    }
+    if (!spawned) {
         fip_print(                                                          //
             0, FIP_WARN, "Failed to spawn slave %s: %d", id, GetLastError() //
         );

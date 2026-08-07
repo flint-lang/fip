@@ -2236,6 +2236,9 @@ send:
 
             // Free the decoded message
             fip_free_msg(&message);
+        } else {
+            fip_print(ID, FIP_WARN, "Master disconnected, shutting down...");
+            break;
         }
 
         // Just wait for N milliseconds before the new loop iteration
