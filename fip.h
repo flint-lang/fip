@@ -3243,6 +3243,33 @@ void fip_slave_send_message(   //
     fflush(stdout);
 }
 
+void fip_slave_open_log(const uint32_t id) {
+    // Redirect stderr to a log file inside the project's `.fip` directory so
+    // that the slave never blocks on the stderr pipe it shares with the master
+    // (the master only drains it after the blocking stdout read, so a slave
+    // which floods stderr would otherwise deadlock with it).
+    char path[128] = {0};
+#ifdef _WIN32
+    CreateDirectoryA(".fip", NULL);
+    CreateDirectoryA(".fip\\log", NULL);
+    snprintf(path, sizeof(path), ".fip\\log\\slave_%u.log", id);
+#else
+    mkdir(".fip", 0777);
+    mkdir(".fip/log", 0777);
+    snprintf(path, sizeof(path), ".fip/log/slave_%u.log", id);
+#endif
+    if (freopen(path, "a", stderr) != NULL) {
+        // Make sure every write is flushed immediately so the log is always
+        // up to date (stderr becomes fully buffered after freopen)
+        setvbuf(stderr, NULL, _IONBF, 0);
+        fip_print(id, FIP_INFO, "Logging to file: %s", path);
+    } else {
+        fip_print(                                                         //
+            id, FIP_WARN, "Could not open log file %s, using stderr", path //
+        );
+    }
+}
+
 void fip_slave_cleanup() {
     fip_print(1, FIP_INFO, "Slave cleaned up");
 }
@@ -3528,6 +3555,7 @@ bool fip_slave_init(uint32_t slave_id) {
     // Set stdin/stdout to binary mode on Windows
     _setmode(_fileno(stdin), _O_BINARY);
     _setmode(_fileno(stdout), _O_BINARY);
+    fip_slave_open_log(slave_id);
     fip_print(slave_id, FIP_INFO, "Slave initialized for stdio communication");
     return true;
 }
@@ -3962,6 +3990,7 @@ fip_master_config_t fip_master_load_config(const char *config_path) {
 #ifdef FIP_SLAVE
 
 bool fip_slave_init(uint32_t slave_id) {
+    fip_slave_open_log(slave_id);
     fip_print(slave_id, FIP_INFO, "Slave initialized for stdio communication");
     return true;
 }
