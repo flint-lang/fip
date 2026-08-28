@@ -1,5 +1,5 @@
 Name:           fip-c
-Version:        0.4.0
+Version:        0.4.1
 Release:        1%{?dist}
 Summary:        C Interop Module utilizing the Flint Interop Protocol
 
@@ -23,6 +23,8 @@ install -Dm755 %{SOURCE0} %{buildroot}%{_bindir}/fip-c
 %{_bindir}/fip-c
 
 %changelog
+* Fri Aug 28 2026 Marc Zweiler marc.zweiler@outlook.at - 0.4.1-1
+- Fixed deadlocks on Windows
 * Tue Jul 9 2026 Marc Zweiler marc.zweiler@outlook.at - 0.4.0-1
 - Added support for opaque types
 - Added support for fixed arrays
