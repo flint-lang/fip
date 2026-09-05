@@ -3,36 +3,90 @@ const std = @import("std");
 const FIP_VERSION = @import("build.zig.zon").version;
 const DEFAULT_LLVM_VERSION = "llvmorg-21.1.8";
 
+const OSTag = enum {
+    linux,
+    windows,
+};
+
+pub const LibMode = enum {
+    none,
+    master,
+    slave,
+};
+
 pub fn build(b: *std.Build) !void {
-    const OSTag = enum { linux, windows };
+    const optimize = b.standardOptimizeOption(.{});
+    const lib_mode = b.option(LibMode, "lib-mode", "Mode to build the library in. Default: build fip-c");
+
+    if (lib_mode) |mode| {
+        const target = b.standardTargetOptions(.{});
+        try buildFipLib(b, target, optimize, mode);
+    } else {
+        try buildFipC(b, optimize);
+    }
+}
+
+fn buildFipLib(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, lib_mode: LibMode) !void {
+    const lib = b.addLibrary(.{
+        .name = "fip",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
+    });
+
+    lib.root_module.addIncludePath(b.path("."));
+    lib.root_module.addIncludePath(b.path("toml"));
+    lib.root_module.addCSourceFile(.{
+        .file = b.path("fip.h"),
+        .flags = &.{
+            "-DFIP_IMPLEMENTATION",
+            switch (lib_mode) {
+                .none => "",
+                .master => "-DFIP_MASTER",
+                .slave => "-DFIP_SLAVE",
+            },
+        },
+        .language = .c,
+    });
+    lib.root_module.addCSourceFile(.{
+        .file = b.path("toml/tomlc17.c"),
+    });
+
+    b.installArtifact(lib);
+    lib.installHeader(b.path("fip.h"), "fip.h");
+    lib.installHeader(b.path("toml/tomlc17.h"), "toml/tomlc17.h");
+}
+
+fn buildFipC(b: *std.Build, optimize: std.builtin.OptimizeMode) !void {
+    const host_target = b.resolveTargetQuery(.{});
+
     _ = b.findProgram(&.{"cmake"}, &.{}) catch @panic("CMake not found on this system");
     _ = b.findProgram(&.{"ninja"}, &.{}) catch @panic("Ninja not found on this system");
     _ = b.findProgram(&.{"python"}, &.{}) catch @panic("Python3 not found on this system");
     _ = b.findProgram(&.{"ld.lld"}, &.{}) catch @panic("LLD not found on this system");
 
-    const host_target = b.resolveTargetQuery(.{});
-    const optimize = b.standardOptimizeOption(.{});
-
     const external_llvm_dir = b.option([]const u8, "llvm-dir", "Path to external LLVM installation.");
-
     if (external_llvm_dir == null) {
         // Since llvm does not need to be fetched, git is not needed
         _ = b.findProgram(&.{"git"}, &.{}) catch @panic("Git not found on this system");
     }
-
+    const build_examples = b.option(bool, "build-examples", "Whether to build the examples. Default: false") orelse
+        false;
     const llvm_version = b.option([]const u8, "llvm-version", b.fmt("LLVM version to use. Default: {s}", .{DEFAULT_LLVM_VERSION})) orelse
         DEFAULT_LLVM_VERSION;
     const force_llvm_rebuild = b.option(bool, "rebuild-llvm", "Force rebuild LLVM") orelse
         false;
     const jobs = b.option(usize, "jobs", "Number of cores to use for building LLVM") orelse
         (try std.Thread.getCpuCount() - 2);
+
     const target_option: OSTag = b.option(OSTag, "target", "The OS to build for") orelse
         switch (host_target.result.os.tag) {
             .linux => .linux,
             .windows => .windows,
             else => @panic("Unsupported OS"),
         };
-
     const target = b.resolveTargetQuery(switch (target_option) {
         .linux => .{
             .cpu_model = .baseline,
@@ -51,17 +105,9 @@ pub fn build(b: *std.Build) !void {
     // Update LLVM
     const update_llvm = if (external_llvm_dir) |_| try makeEmptyStep(b) else try updateLLVM(b, llvm_version);
     // Build LLVM
-    const llvm_dir = if (external_llvm_dir) |dir| dir else "vendor/sources/llvm-project";
-    const build_llvm = try buildLLVM(b, &update_llvm.step, target, force_llvm_rebuild, jobs, llvm_dir);
-    // Build fip-c exe
-    try buildFipC(b, &build_llvm.step, target, optimize);
-    // Build examples only if no external llvm dir is provided (to not build examples for nix)
-    if (external_llvm_dir == null) {
-        try buildExamples(b, target, optimize);
-    }
-}
+    const llvm_project_dir = if (external_llvm_dir) |dir| dir else "vendor/sources/llvm-project";
+    const build_llvm = try buildLLVM(b, &update_llvm.step, target, force_llvm_rebuild, jobs, llvm_project_dir);
 
-fn buildFipC(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) !void {
     const exe = b.addExecutable(.{
         .name = "fip-c",
         .root_module = b.createModule(.{
@@ -69,12 +115,8 @@ fn buildFipC(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.Re
             .optimize = optimize,
             .link_libcpp = true,
         }),
-        .version = try .parse(FIP_VERSION),
     });
     b.installArtifact(exe);
-    if (optimize == .Debug) {
-        exe.root_module.addCMacro("DEBUG_BUILD", "");
-    }
     exe.link_function_sections = true;
     exe.link_data_sections = true;
     exe.link_gc_sections = true;
@@ -138,7 +180,12 @@ fn buildFipC(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.Re
         exe.root_module.linkSystemLibrary("ole32", .{});
         exe.root_module.linkSystemLibrary("version", .{});
     }
-    try linkWithClangLibs(b, previous_step, exe, b.fmt("{s}/lib", .{llvm_dir}));
+    try linkWithClangLibs(b, &build_llvm.step, exe, b.fmt("{s}/lib", .{llvm_dir}));
+
+    // Build examples only if no external llvm dir is provided (to not build examples for nix)
+    if (build_examples) {
+        try buildExamples(b, target, optimize);
+    }
 }
 
 fn buildExamples(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) !void {
