@@ -1,4 +1,5 @@
 -I./
+-Izig-out/include
 -Ivendor/llvm-linux/include
 -Ivendor/llvm-mingw/include
 -std=c17

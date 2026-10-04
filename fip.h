@@ -33,7 +33,7 @@
 #define FIP_SLAVE
 #endif
 
-#include "toml/tomlc17.h"
+#include <tomlc17.h>
 
 #include <assert.h>
 #include <stdarg.h>

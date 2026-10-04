@@ -18,15 +18,30 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const lib_mode = b.option(LibMode, "lib-mode", "Mode to build the library in. Default: build fip-c");
 
+    const build_examples = b.option(bool, "build-examples", "Whether to build the examples. Default: false") orelse
+        false;
+
+    const toml_dep = b.dependency("tomlc17", .{});
+
     if (lib_mode) |mode| {
         const target = b.standardTargetOptions(.{});
-        try buildFipLib(b, target, optimize, mode);
+        try buildFipLib(b, target, optimize, toml_dep, mode);
     } else {
-        try buildFipC(b, optimize);
+        try buildFipC(b, optimize, toml_dep);
+    }
+
+    if (build_examples) {
+        try buildExamples(b, optimize, toml_dep);
     }
 }
 
-fn buildFipLib(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, lib_mode: LibMode) !void {
+fn buildFipLib(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    toml_dep: *std.Build.Dependency,
+    lib_mode: LibMode,
+) !void {
     const lib = b.addLibrary(.{
         .name = "fip",
         .root_module = b.createModule(.{
@@ -37,7 +52,7 @@ fn buildFipLib(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
     });
 
     lib.root_module.addIncludePath(b.path("."));
-    lib.root_module.addIncludePath(b.path("toml"));
+    lib.root_module.addIncludePath(toml_dep.path("src"));
     lib.root_module.addCSourceFile(.{
         .file = b.path("fip.h"),
         .flags = &.{
@@ -51,17 +66,19 @@ fn buildFipLib(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bu
         .language = .c,
     });
     lib.root_module.addCSourceFile(.{
-        .file = b.path("toml/tomlc17.c"),
+        .file = toml_dep.path("src/tomlc17.c"),
     });
 
     b.installArtifact(lib);
     lib.installHeader(b.path("fip.h"), "fip.h");
-    lib.installHeader(b.path("toml/tomlc17.h"), "toml/tomlc17.h");
+    lib.installHeader(toml_dep.path("src/tomlc17.h"), "tomlc17.h");
 }
 
-fn buildFipC(b: *std.Build, optimize: std.builtin.OptimizeMode) !void {
-    const host_target = b.resolveTargetQuery(.{});
-
+fn buildFipC(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    toml_dep: *std.Build.Dependency,
+) !void {
     _ = b.findProgram(&.{"cmake"}, &.{}) catch @panic("CMake not found on this system");
     _ = b.findProgram(&.{"ninja"}, &.{}) catch @panic("Ninja not found on this system");
     _ = b.findProgram(&.{"python"}, &.{}) catch @panic("Python3 not found on this system");
@@ -72,8 +89,6 @@ fn buildFipC(b: *std.Build, optimize: std.builtin.OptimizeMode) !void {
         // Since llvm does not need to be fetched, git is not needed
         _ = b.findProgram(&.{"git"}, &.{}) catch @panic("Git not found on this system");
     }
-    const build_examples = b.option(bool, "build-examples", "Whether to build the examples. Default: false") orelse
-        false;
     const llvm_version = b.option([]const u8, "llvm-version", b.fmt("LLVM version to use. Default: {s}", .{DEFAULT_LLVM_VERSION})) orelse
         DEFAULT_LLVM_VERSION;
     const force_llvm_rebuild = b.option(bool, "rebuild-llvm", "Force rebuild LLVM") orelse
@@ -82,7 +97,7 @@ fn buildFipC(b: *std.Build, optimize: std.builtin.OptimizeMode) !void {
         (try std.Thread.getCpuCount() - 2);
 
     const target_option: OSTag = b.option(OSTag, "target", "The OS to build for") orelse
-        switch (host_target.result.os.tag) {
+        switch (b.graph.host.result.os.tag) {
             .linux => .linux,
             .windows => .windows,
             else => @panic("Unsupported OS"),
@@ -131,10 +146,13 @@ fn buildFipC(b: *std.Build, optimize: std.builtin.OptimizeMode) !void {
 
     // Add Include paths
     exe.root_module.addSystemIncludePath(b.path(b.fmt("{s}/include", .{llvm_dir})));
-    exe.root_module.addIncludePath(b.path(""));
+    exe.root_module.addIncludePath(b.path("."));
+    exe.root_module.addIncludePath(toml_dep.path("src"));
 
     // Add Library paths
     exe.root_module.addLibraryPath(b.path(b.fmt("{s}/lib", .{llvm_dir})));
+    const install_toml_step = b.addInstallHeaderFile(toml_dep.path("src/tomlc17.h"), "tomlc17.h");
+    exe.step.dependOn(&install_toml_step.step);
 
     // zig fmt: off
     // Add C++ src files
@@ -172,7 +190,7 @@ fn buildFipC(b: *std.Build, optimize: std.builtin.OptimizeMode) !void {
 
     // Add toml C src file for FIP
     exe.root_module.addCSourceFile(.{
-        .file = b.path("toml/tomlc17.c"),
+        .file = toml_dep.path("src/tomlc17.c"),
     });
 
     // Link libraries
@@ -181,18 +199,17 @@ fn buildFipC(b: *std.Build, optimize: std.builtin.OptimizeMode) !void {
         exe.root_module.linkSystemLibrary("version", .{});
     }
     try linkWithClangLibs(b, &build_llvm.step, exe, b.fmt("{s}/lib", .{llvm_dir}));
-
-    // Build examples only if no external llvm dir is provided (to not build examples for nix)
-    if (build_examples) {
-        try buildExamples(b, target, optimize);
-    }
 }
 
-fn buildExamples(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) !void {
+fn buildExamples(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    toml_dep: *std.Build.Dependency,
+) !void {
     const exe = b.addExecutable(.{
         .name = "example_master",
         .root_module = b.createModule(.{
-            .target = target,
+            .target = b.graph.host,
             .optimize = optimize,
             .link_libc = true,
         }),
@@ -208,7 +225,8 @@ fn buildExamples(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
     exe.build_id = .fast;
 
     // Add Include paths
-    exe.root_module.addIncludePath(b.path(""));
+    exe.root_module.addIncludePath(b.path("."));
+    exe.root_module.addIncludePath(toml_dep.path("src"));
 
     // zig fmt: off
     // Add C++ src files
@@ -245,8 +263,10 @@ fn buildExamples(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.
 
     // Add toml C src file for FIP
     exe.root_module.addCSourceFile(.{
-        .file = b.path("toml/tomlc17.c"),
+        .file = toml_dep.path("src/tomlc17.c"),
     });
+    const install_toml_step = b.addInstallHeaderFile(toml_dep.path("src/tomlc17.h"), "tomlc17.h");
+    exe.step.dependOn(&install_toml_step.step);
 }
 
 fn buildLLVM(b: *std.Build, previous_step: *std.Build.Step, target: std.Build.ResolvedTarget, force_rebuild: bool, jobs: usize, llvm_dir: []const u8) !*std.Build.Step.Run {
