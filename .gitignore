@@ -1,6 +1,4 @@
 .zig-cache
-.fip/cache
-.fip/log
 zig-out
 zig-pkg
-vendor
+
