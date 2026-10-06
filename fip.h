@@ -89,13 +89,11 @@ extern int clock_gettime(clockid_t clk_id, struct timespec *tp);
 
 #ifdef __WIN32__
 #include <windows.h>
-[[maybe_unused]]
-static void msleep(unsigned int ms) {
+__attribute__((unused)) static void msleep(unsigned int ms) {
     Sleep(ms);
 }
 #else
-[[maybe_unused]]
-static void msleep(unsigned int ms) {
+__attribute__((unused)) static void msleep(unsigned int ms) {
     struct timespec ts;
     ts.tv_sec = ms / 1000;
     ts.tv_nsec = (ms % 1000) * 1000000L;
