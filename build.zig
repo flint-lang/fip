@@ -20,15 +20,31 @@ pub fn build(b: *std.Build) !void {
 
     const lib_mode = b.option(LibMode, "lib-mode", "Mode to build the library in. Default: none (neither master nor slave)") orelse .none;
 
-    const toml_dep = b.dependency("tomlc17", .{});
-    _ = mkfip(b, target, optimize, lib_mode);
+    var lib_mode_options = b.addOptions();
+    lib_mode_options.addOption(LibMode, "lib_mode", lib_mode);
 
+    const toml_dep = b.dependency("tomlc17", .{});
     const toml_c = b.addTranslateC(.{
         .target = target,
         .optimize = optimize,
         .root_source_file = toml_dep.path("src/tomlc17.h"),
     });
     const toml_module = toml_c.createModule();
+
+    const fip_lib = mkfip(b, target, optimize, lib_mode);
+    const ext_fip_module = b.addModule("fip", .{
+        .root_source_file = b.path("bindings/fip.zig"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
+        .imports = &.{
+            .{ .name = "defines", .module = lib_mode_options.createModule() },
+            .{ .name = "toml", .module = toml_module },
+        },
+    });
+    ext_fip_module.linkLibrary(fip_lib);
+
+    b.modules.put(b.graph.arena, b.dupe("toml"), toml_module) catch @panic("OOM");
 
     const tests_step = b.step("test", "Run tests");
     inline for (.{ .master, .slave }) |mode| {

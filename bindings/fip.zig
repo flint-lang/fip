@@ -70,7 +70,7 @@ pub const LogLevel = enum(u8) {
 
 /// The struct representing a type in FIP
 pub const Type = extern struct {
-    is_mutable: bool,
+    is_mutable: bool = false,
     tag: Tag,
     u: U,
 
@@ -122,36 +122,36 @@ pub const Type = extern struct {
 
     /// The struct representing a struct type
     pub const Struct = extern struct {
-        name: [128]u8,
-        field_count: usize,
-        fields: [*]Type,
+        name: [128]u8 = @splat(0),
+        field_count: usize = 0,
+        fields: [*]Type = undefined,
     };
 
     /// The struct representing recursive / repeating types
     pub const Recursive = extern struct {
-        levels_back: u8,
+        levels_back: u8 = 0,
     };
 
     /// The struct representing enum types
     pub const Enum = extern struct {
-        name: [128]u8,
-        bit_width: u8,
-        is_signed: bool,
-        value_count: usize,
+        name: [128]u8 = @splat(0),
+        bit_width: u8 = 0,
+        is_signed: bool = false,
+        value_count: usize = 0,
         /// The value is a size_t because it can be anything from i1 up to an u64 / i64.
         /// The underlying enum type can differ
-        values: [*]usize,
+        values: [*]usize = undefined,
     };
 
     /// The struct representing fixed-size arrays
     pub const Array = extern struct {
-        size: usize,
+        size: usize = 0,
         base_type: *Type,
     };
 
     /// @brief The struct representing a named opaque type
     pub const Opaque = extern struct {
-        name: [128]u8,
+        name: [128]u8 = @splat(0),
     };
 
     pub const print = print_type;
@@ -161,8 +161,8 @@ pub const Type = extern struct {
 
 /// Union representing a single FIP symbol signature
 pub const Signature = extern struct {
-    tag: Tag,
-    u: U,
+    tag: Tag = .unknown,
+    u: U = .{ .unknown = {} },
 
     pub const Tag = EnumFromExternUnion(U, u8);
     pub const U = extern union {
@@ -175,15 +175,15 @@ pub const Signature = extern struct {
 
     /// Struct representing the signature of a FIP-defined function
     pub const Fn = extern struct {
-        name: [128]u8,
-        args_len: usize,
-        args: [*]Arg,
-        rets_len: usize,
-        rets: [*]Type,
+        name: [128]u8 = @splat(0),
+        args_len: usize = 0,
+        args: [*]Arg = undefined,
+        rets_len: usize = 0,
+        rets: [*]Type = undefined,
 
         /// Struct representing a single arugment of a FIP-defined function
         pub const Arg = extern struct {
-            name: [128]u8,
+            name: [128]u8 = @splat(0),
             type: Type,
         };
 
@@ -192,12 +192,12 @@ pub const Signature = extern struct {
     };
 
     pub const Data = extern struct {
-        name: [128]u8,
-        field_count: usize,
-        fields: [*]Field,
+        name: [128]u8 = @splat(0),
+        field_count: usize = 0,
+        fields: [*]Field = undefined,
 
         pub const Field = extern struct {
-            name: [128]u8,
+            name: [128]u8 = @splat(0),
             type: Type,
         };
 
@@ -207,17 +207,17 @@ pub const Signature = extern struct {
 
     /// Struct representing the signature of a FIP-defined enum
     pub const Enum = extern struct {
-        name: [128]u8,
+        name: [128]u8 = @splat(0),
         type: Type.Primitive,
-        value_count: usize,
-        values: [*]Value,
+        value_count: usize = 0,
+        values: [*]Value = undefined,
 
         /// Struct representing a single enum value
         pub const Value = extern struct {
-            tag: [128]u8,
+            tag: [128]u8 = @splat(0),
             /// The value is a size_t because it can be anything from i1 up to an u64 / i64.
             /// The underlying enum type can differ
-            value: usize,
+            value: usize = 0,
         };
 
         pub const print = print_sig_enum;
@@ -226,7 +226,7 @@ pub const Signature = extern struct {
 
     /// Struct representing the signature of a FIP-defined named opaque type
     pub const Opaque = extern struct {
-        name: [128]u8,
+        name: [128]u8 = @splat(0),
 
         pub const print = print_sig_opaque;
         pub const clone = clone_sig_opaque;
@@ -258,8 +258,8 @@ pub const SignatureList = FlexibleArray(Signature);
 
 /// Union representing a single FIP IPC message
 pub const Message = extern struct {
-    tag: Tag,
-    u: U,
+    tag: Tag = .unknown,
+    u: U = .{ .unknown = {} },
 
     pub const Tag = EnumFromExternUnion(U, u8);
     pub const U = extern union {
@@ -294,13 +294,13 @@ pub const Message = extern struct {
 
     /// Struct representing all information from a connection request
     pub const ConnectRequest = extern struct {
-        setup_ok: bool,
+        setup_ok: bool = 0,
         version: extern struct {
-            major: u8,
-            minor: u8,
-            patch: u8,
+            major: u8 = 0,
+            minor: u8 = 0,
+            patch: u8 = 0,
         },
-        module_name: [MAX_MODULE_NAME_LEN]u8,
+        module_name: [MAX_MODULE_NAME_LEN]u8 = @splat(0),
     };
 
     /// Struct representing the symbol request message
@@ -310,44 +310,44 @@ pub const Message = extern struct {
 
     /// Struct representing the symbol response message
     pub const SymbolResponse = extern struct {
-        found: bool,
-        module_name: [MAX_MODULE_NAME_LEN]u8,
+        found: bool = false,
+        module_name: [MAX_MODULE_NAME_LEN]u8 = @splat(0),
         sig: Signature,
     };
 
     /// Struct representing the compile request message
     pub const CompileRequest = extern struct {
         target: extern struct {
-            arch: [16]u8,
-            sub: [16]u8,
-            vendor: [16]u8,
-            sys: [16]u8,
-            abi: [16]u8,
+            arch: [16]u8 = @splat(0),
+            sub: [16]u8 = @splat(0),
+            vendor: [16]u8 = @splat(0),
+            sys: [16]u8 = @splat(0),
+            abi: [16]u8 = @splat(0),
         },
     };
 
     /// Struct representing the object response message
     pub const ObjectResponse = extern struct {
-        has_obj: bool,
-        compilation_failed: bool,
-        module_name: [MAX_MODULE_NAME_LEN]u8,
-        path_count: usize,
-        paths: [PATHS_SIZE]u8,
+        has_obj: bool = false,
+        compilation_failed: bool = false,
+        module_name: [MAX_MODULE_NAME_LEN]u8 = @splat(0),
+        path_count: usize = 0,
+        paths: [PATHS_SIZE]u8 = @splat(0),
     };
 
     /// Struct representing the tag request message
     pub const TagRequest = extern struct {
-        tag: [128]u8,
+        tag: [128]u8 = @splat(0),
     };
 
     /// Struct representing the tag present response message
     pub const TagPresentResponse = extern struct {
-        is_present: bool,
+        is_present: bool = false,
     };
 
     /// Struct representing the tag symbol response message
     pub const TagSymbolResponse = extern struct {
-        is_empty: bool,
+        is_empty: bool = false,
         sig: Signature,
     };
 
@@ -377,7 +377,7 @@ pub const Message = extern struct {
 /// @param `log_level` The log level of the current message to print
 /// @param `format` The format string of the printed message
 /// @param `...` The variadic values to put into the formatted output
-extern fn fip_print(id: u32, log_level: LogLevel, format: [*c]u8, ...) void;
+extern fn fip_print(id: u32, log_level: LogLevel, format: [*c]const u8, ...) void;
 pub const print = fip_print;
 
 /// @function `fip_print_msg`
@@ -433,7 +433,7 @@ pub const free_sig_list = fip_free_sig_list;
 ///
 /// @param `hash` The buffer in which to write the hash
 /// @param `file_path` The file path to turn into a 8 Byte hash
-extern fn fip_create_hash(hash: *[PATH_SIZE]u8, file_path: [*:0]const u8) void;
+extern fn fip_create_hash(hash: *[PATH_SIZE]u8, file_path: [*c]const u8) void;
 pub const create_hash = fip_create_hash;
 
 /// @function `fip_print_type`
@@ -523,7 +523,7 @@ pub const clone_type = fip_clone_type;
 /// @param `output` The output parameter where the output of the command gets written to
 /// @param `command` The command to execute
 /// @return `int` The exit code of the executed command
-extern fn fip_execute_and_caputre(output: *allowzero [*:0]const u8, command: [*:0]const u8) c_int;
+extern fn fip_execute_and_caputre(output: *allowzero [*c]const u8, command: [*c]const u8) c_int;
 pub const execute_and_capture = fip_execute_and_caputre;
 
 pub const master = if (defines.lib_mode != .master) @compileError("lib_mode != .master, master namespace unavailable") else struct {
@@ -597,7 +597,7 @@ pub const master = if (defines.lib_mode != .master) @compileError("lib_mode != .
     /// directory
     /// @param `module` The interop module to start
     /// @return `bool` Whether the interop module process creation was successful
-    extern fn fip_spawn_interop_module(modules: *InteropModules, root_path: [*:0]const u8, module: [*:0]const u8) bool;
+    extern fn fip_spawn_interop_module(modules: *InteropModules, root_path: [*c]const u8, module: [*c]const u8) bool;
     pub const spawn_interop_module = fip_spawn_interop_module;
 
     /// @function `fip_terminate_all_slaves`
@@ -702,7 +702,7 @@ pub const master = if (defines.lib_mode != .master) @compileError("lib_mode != .
     /// @param `config_path` The path to the `fip.toml` config file located in
     /// `<ProjectPath>/.fip/config/.toml`
     /// @return `fip_master_config_t` The loaded configuration
-    extern fn fip_master_load_config(config_path: [*:0]const u8) Config;
+    extern fn fip_master_load_config(config_path: [*c]const u8) Config;
     pub const load_config = fip_master_load_config;
 };
 
@@ -744,7 +744,7 @@ pub const slave = if (defines.lib_mode != .slave) @compileError("lib_mode != .sl
     /// @return `toml_result_t` The loaded configuration toml file. Interpreting the
     /// content of this file is the responsibility of each interop module itself,
     /// the FIP protocol itself stays purely language-independant
-    extern fn fip_slave_load_config(id: u32, module_name: [*:0]const u8) toml.toml_result_t;
+    extern fn fip_slave_load_config(id: u32, module_name: [*c]const u8) toml.toml_result_t;
     pub const load_config = fip_slave_load_config;
 };
 
