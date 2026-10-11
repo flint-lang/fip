@@ -294,7 +294,7 @@ pub const Message = extern struct {
 
     /// Struct representing all information from a connection request
     pub const ConnectRequest = extern struct {
-        setup_ok: bool = 0,
+        setup_ok: bool = false,
         version: extern struct {
             major: u8 = 0,
             minor: u8 = 0,

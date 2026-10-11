@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) !void {
     });
     const toml_module = toml_c.createModule();
 
-    const fip_lib = mkfip(b, target, optimize, lib_mode);
+    const fip_lib = mkfip(b, target, optimize, lib_mode, false);
     const ext_fip_module = b.addModule("fip", .{
         .root_source_file = b.path("bindings/fip.zig"),
         .target = target,
@@ -48,7 +48,7 @@ pub fn build(b: *std.Build) !void {
 
     const tests_step = b.step("test", "Run tests");
     inline for (.{ .master, .slave }) |mode| {
-        const mode_lib = mkfip(b, target, optimize, mode);
+        const mode_lib = mkfip(b, target, optimize, mode, true);
 
         var mode_options = b.addOptions();
         mode_options.addOption(LibMode, "lib_mode", mode);
@@ -73,10 +73,16 @@ pub fn build(b: *std.Build) !void {
     }
 }
 
-fn mkfip(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, lib_mode: LibMode) *std.Build.Step.Compile {
+fn mkfip(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    lib_mode: LibMode,
+    is_test: bool,
+) *std.Build.Step.Compile {
     const toml_dep = b.dependency("tomlc17", .{});
     const lib = b.addLibrary(.{
-        .name = "fip",
+        .name = if (!is_test) "fip" else b.fmt("fip-test-{s}", .{@tagName(lib_mode)}),
         .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
