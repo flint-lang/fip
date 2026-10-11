@@ -7,6 +7,7 @@ pub const MINOR = 4;
 pub const PATCH = 1;
 
 pub const MSG_SIZE = 4096;
+pub const NAME_SIZE = 127;
 
 pub const MAX_MODULE_NAME_LEN = 16;
 pub const PATH_SIZE = 8;
@@ -79,7 +80,7 @@ pub const Type = extern struct {
         primitive: Primitive,
         pointer: Pointer,
         @"struct": Struct,
-        recursive: Recursive,
+        named: Named,
         @"enum": Enum,
         array: Array,
         @"opaque": Opaque,
@@ -122,19 +123,20 @@ pub const Type = extern struct {
 
     /// The struct representing a struct type
     pub const Struct = extern struct {
-        name: [128]u8 = @splat(0),
+        name: [NAME_SIZE:0]u8 = @splat(0),
         field_count: usize = 0,
         fields: [*]Type = undefined,
     };
 
-    /// The struct representing recursive / repeating types
-    pub const Recursive = extern struct {
-        levels_back: u8 = 0,
+    /// The struct representing named types, to reduce the amount of re-typing.
+    /// A self-referential type contains a named type, for example, or all later references of already-known types are named types too
+    pub const Named = extern struct {
+        name: [NAME_SIZE:0]u8 = @splat(0),
     };
 
     /// The struct representing enum types
     pub const Enum = extern struct {
-        name: [128]u8 = @splat(0),
+        name: [NAME_SIZE:0]u8 = @splat(0),
         bit_width: u8 = 0,
         is_signed: bool = false,
         value_count: usize = 0,
@@ -151,7 +153,7 @@ pub const Type = extern struct {
 
     /// @brief The struct representing a named opaque type
     pub const Opaque = extern struct {
-        name: [128]u8 = @splat(0),
+        name: [NAME_SIZE:0]u8 = @splat(0),
     };
 
     pub const to_string = type_to_string;
@@ -175,7 +177,7 @@ pub const Signature = extern struct {
 
     /// Struct representing the signature of a FIP-defined function
     pub const Fn = extern struct {
-        name: [128]u8 = @splat(0),
+        name: [NAME_SIZE:0]u8 = @splat(0),
         args_len: usize = 0,
         args: [*]Arg = undefined,
         rets_len: usize = 0,
@@ -183,7 +185,7 @@ pub const Signature = extern struct {
 
         /// Struct representing a single arugment of a FIP-defined function
         pub const Arg = extern struct {
-            name: [128]u8 = @splat(0),
+            name: [NAME_SIZE:0]u8 = @splat(0),
             type: Type,
         };
 
@@ -192,12 +194,12 @@ pub const Signature = extern struct {
     };
 
     pub const Data = extern struct {
-        name: [128]u8 = @splat(0),
+        name: [NAME_SIZE:0]u8 = @splat(0),
         field_count: usize = 0,
         fields: [*]Field = undefined,
 
         pub const Field = extern struct {
-            name: [128]u8 = @splat(0),
+            name: [NAME_SIZE:0]u8 = @splat(0),
             type: Type,
         };
 
@@ -207,14 +209,14 @@ pub const Signature = extern struct {
 
     /// Struct representing the signature of a FIP-defined enum
     pub const Enum = extern struct {
-        name: [128]u8 = @splat(0),
+        name: [NAME_SIZE:0]u8 = @splat(0),
         type: Type.Primitive,
         value_count: usize = 0,
         values: [*]Value = undefined,
 
         /// Struct representing a single enum value
         pub const Value = extern struct {
-            tag: [128]u8 = @splat(0),
+            tag: [NAME_SIZE:0]u8 = @splat(0),
             /// The value is a size_t because it can be anything from i1 up to an u64 / i64.
             /// The underlying enum type can differ
             value: usize = 0,
@@ -226,7 +228,7 @@ pub const Signature = extern struct {
 
     /// Struct representing the signature of a FIP-defined named opaque type
     pub const Opaque = extern struct {
-        name: [128]u8 = @splat(0),
+        name: [NAME_SIZE:0]u8 = @splat(0),
 
         pub const print = print_sig_opaque;
         pub const clone = clone_sig_opaque;
@@ -337,7 +339,7 @@ pub const Message = extern struct {
 
     /// Struct representing the tag request message
     pub const TagRequest = extern struct {
-        tag: [128]u8 = @splat(0),
+        tag: [NAME_SIZE:0]u8 = @splat(0),
     };
 
     /// Struct representing the tag present response message
