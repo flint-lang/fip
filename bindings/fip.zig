@@ -154,7 +154,7 @@ pub const Type = extern struct {
         name: [128]u8 = @splat(0),
     };
 
-    pub const print = print_type;
+    pub const to_string = type_to_string;
     pub const clone = clone_type;
     pub const free = free_type;
 };
@@ -436,13 +436,16 @@ pub const free_sig_list = fip_free_sig_list;
 extern fn fip_create_hash(hash: *[PATH_SIZE]u8, file_path: [*c]const u8) void;
 pub const create_hash = fip_create_hash;
 
-/// @function `fip_print_type`
-/// @brief "Prints" a given type into the internal buffer which then can be used to print
-/// the whole type in one fip_print call
+/// @function `fip_type_to_string`
+/// @brief "Prints" a given type into the internal buffer and returns a pointer into
+/// that buffer which then can be used to print the whole type in one fip_print call
 ///
 /// @param `type` The type to print into the internal buffer
-extern fn fip_print_type(@"type": *const Type) void;
-pub const print_type = fip_print_type;
+/// @param `is_top_level` Whether the type to string conversion is called at the top level (true) or nested within itself (false)
+/// @return `const char *` A null-terminated string of the typ type stored in the internal buffer.
+///                        Callers do not own it nor are they allowed to change it
+extern fn fip_type_to_string(@"type": *const Type, is_top_level: bool) [*c]const u8;
+pub const type_to_string = fip_type_to_string;
 
 /// @function `fip_print_sig_fn`
 /// @brief Prints a parsed function signature to the console

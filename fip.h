@@ -528,12 +528,21 @@ void fip_free_sig_list(fip_sig_list_t *const list);
 /// @param `file_path` The file path to turn into a 8 Byte hash
 void fip_create_hash(char hash[FIP_PATH_SIZE], const char *file_path);
 
-/// @function `fip_print_type`
-/// @brief "Prints" a given type into the internal buffer which then can be used
-/// to print the whole type in one fip_print call
+/// @function `fip_type_to_string`
+/// @brief "Prints" a given type into the internal buffer and returns a pointer
+/// into that buffer which then can be used to print the whole type in one
+/// fip_print call
 ///
 /// @param `type` The type to print into the internal buffer
-void fip_print_type(const fip_type_t *const type);
+/// @param `is_top_level` Whether the type to string conversion is called at the
+///                       top level (true) or nested within itself (false)
+/// @return `const char *` A null-terminated string of the typ type stored in
+///                        the internal buffer. Callers do not own it nor are
+///                        they allowed to change it
+const char *fip_type_to_string(   //
+    const fip_type_t *const type, //
+    const bool is_top_level       //
+);
 
 /// @function `fip_print_sig_fn`
 /// @brief Prints a parsed function signature to the console
@@ -2195,8 +2204,10 @@ void fip_create_hash(char hash[FIP_PATH_SIZE], const char *file_path) {
     }
 }
 
-void fip_print_type(const fip_type_t *const type) {
-    if (b_idx == 0) {
+char const *fip_type_to_string(const fip_type_t *const type,
+    const bool is_top_level) {
+    if (is_top_level) {
+        b_idx = 0;
         memset(buffer, 0, FIP_MSG_SIZE);
     }
     switch (type->tag) {
@@ -2208,14 +2219,14 @@ void fip_print_type(const fip_type_t *const type) {
             break;
         }
         case FIP_TYPE_PTR:
-            fip_print_type(type->u.ptr.base_type);
+            fip_type_to_string(type->u.ptr.base_type, false);
             buffer[b_idx++] = '*';
             break;
         case FIP_TYPE_STRUCT:
             buffer[b_idx++] = '{';
             buffer[b_idx++] = ' ';
             for (uint8_t i = 0; i < type->u.struct_t.field_count; i++) {
-                fip_print_type(&type->u.struct_t.fields[i]);
+                fip_type_to_string(&type->u.struct_t.fields[i], false);
                 if (i + 1 != type->u.struct_t.field_count) {
                     buffer[b_idx++] = ',';
                 }
@@ -2316,7 +2327,7 @@ void fip_print_type(const fip_type_t *const type) {
             break;
         }
         case FIP_TYPE_ARRAY: {
-            fip_print_type(type->u.array.base_type);
+            fip_type_to_string(type->u.array.base_type, false);
             buffer[b_idx++] = '[';
             unsigned long long arr_len = (unsigned long long)type->u.array.size;
             int wrote = snprintf(&buffer[b_idx], 20, "%llu", arr_len);
@@ -2334,16 +2345,14 @@ void fip_print_type(const fip_type_t *const type) {
             break;
         }
     }
+    return buffer;
 }
 
 void fip_print_sig_fn(const fip_sig_fn_t *const sig, const uint32_t id) {
     fip_print(id, FIP_DEBUG, "  Function Signature:");
     fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
-    memset(buffer, 0, FIP_MSG_SIZE);
-    b_idx = 0;
     for (size_t i = 0; i < sig->args_len; i++) {
-        b_idx = 0;
-        fip_print_type(&sig->args[i].type);
+        fip_type_to_string(&sig->args[i].type, true);
         if (sig->args[i].type.is_mutable) {
             fip_print(                                   //
                 id, FIP_DEBUG, "    arg[%u]: mut %s %s", //
@@ -2357,9 +2366,7 @@ void fip_print_sig_fn(const fip_sig_fn_t *const sig, const uint32_t id) {
         }
     }
     for (size_t i = 0; i < sig->rets_len; i++) {
-        memset(buffer, 0, FIP_MSG_SIZE);
-        b_idx = 0;
-        fip_print_type(&sig->rets[i]);
+        fip_type_to_string(&sig->rets[i], true);
         if (sig->rets[i].is_mutable) {
             fip_print(id, FIP_DEBUG, "    ret[%u]: mut %s", i, buffer);
         } else {
@@ -2374,9 +2381,7 @@ void fip_print_sig_data(const fip_sig_data_t *const sig, const uint32_t id) {
     b_idx = 0;
     for (size_t i = 0; i < sig->field_count; i++) {
         fip_sig_data_field_t *const field = &sig->fields[i];
-        memset(buffer, 0, FIP_MSG_SIZE);
-        b_idx = 0;
-        fip_print_type(&field->type);
+        fip_type_to_string(&field->type, true);
         if (field->type.is_mutable) {
             fip_print(id, FIP_DEBUG, "    %s: mut %s", field->name, buffer);
         } else {
