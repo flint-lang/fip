@@ -178,6 +178,13 @@ typedef struct {
     char name[FIP_NAME_SIZE];
 } fip_type_named_t;
 
+/// @typedef `fip_type_neum_value_t`
+/// @brief The struct representing a single enum value
+typedef struct fip_type_enum_value_t {
+    bool is_signed;
+    size_t value;
+} fip_type_enum_value_t;
+
 /// @typedef `fip_type_enum_t`
 /// @brief The struct representing enum types
 typedef struct {
@@ -185,9 +192,7 @@ typedef struct {
     uint8_t bit_width;
     bool is_signed;
     size_t value_count;
-    // The value is a size_t because it can be anything from i1 up to an u64 /
-    // i64. The underlying enum type can differ
-    size_t *values;
+    fip_type_enum_value_t *values;
 } fip_type_enum_t;
 
 /// @typedef `fip_type_array_t`
@@ -273,9 +278,7 @@ typedef struct {
 /// @brief Struct representing a single enum value
 typedef struct {
     char tag[FIP_NAME_SIZE];
-    // The value is a size_t because it can be anything from i1 up to an u64 /
-    // i64. The underlying enum type can differ
-    size_t value;
+    fip_type_enum_value_t value;
 } fip_sig_enum_value_t;
 
 /// @typedef `fip_sig_enum_t`
@@ -1280,10 +1283,11 @@ void fip_encode_type(const fip_type_t *type) {
             memcpy(&buffer[b_idx], &type->u.enum_t.value_count, sizeof(size_t));
             b_idx += sizeof(size_t);
             for (size_t i = 0; i < type->u.enum_t.value_count; i++) {
-                memcpy(                                                       //
-                    &buffer[b_idx], &type->u.enum_t.values[i], sizeof(size_t) //
+                memcpy(                                        //
+                    &buffer[b_idx], &type->u.enum_t.values[i], //
+                    sizeof(fip_sig_enum_value_t)               //
                 );
-                b_idx += sizeof(size_t);
+                b_idx += sizeof(fip_sig_enum_value_t);
             }
             break;
         }
@@ -1597,14 +1601,15 @@ void fip_decode_type(fip_type_t *const type) {
             type->u.enum_t.is_signed = buffer[b_idx++];
             memcpy(&type->u.enum_t.value_count, &buffer[b_idx], sizeof(size_t));
             b_idx += sizeof(size_t);
-            type->u.enum_t.values = (size_t *)malloc(       //
-                sizeof(size_t) * type->u.enum_t.value_count //
+            type->u.enum_t.values = (fip_type_enum_value_t *)malloc(       //
+                sizeof(fip_type_enum_value_t) * type->u.enum_t.value_count //
             );
             for (size_t i = 0; i < type->u.enum_t.value_count; i++) {
-                memcpy(                                                       //
-                    &type->u.enum_t.values[i], &buffer[b_idx], sizeof(size_t) //
+                memcpy(                                        //
+                    &type->u.enum_t.values[i], &buffer[b_idx], //
+                    sizeof(fip_type_enum_value_t)              //
                 );
-                b_idx += sizeof(size_t);
+                b_idx += sizeof(fip_type_enum_value_t);
             }
             break;
         }
@@ -2286,46 +2291,16 @@ char const *fip_type_to_string(   //
             }
             buffer[b_idx++] = ')';
             buffer[b_idx++] = '{';
-            for (uint8_t i = 0; i < type->u.enum_t.value_count; i++) {
-                uint64_t raw = (uint64_t)type->u.enum_t.values[i];
-                uint8_t bw = type->u.enum_t.bit_width;
-
-                // Compute mask for bw bits
-                uint64_t mask = (bw == 64) //
-                    ? UINT64_MAX           //
-                    : ((1ull << bw) - 1ull);
-                uint64_t v = raw & mask;
-
-                if (type->u.enum_t.is_signed) {
-                    // sign-extend v from bw bits to int64_t
-                    int64_t sval;
-                    if (bw == 64) {
-                        // full 64-bit two's complement
-                        sval = (int64_t)v;
-                    } else {
-                        uint64_t sign_bit = 1ull << (bw - 1);
-                        if (v & sign_bit) {
-                            // extend ones above bw
-                            uint64_t extended = v | (~mask);
-                            sval = (int64_t)extended;
-                        } else {
-                            sval = (int64_t)v;
-                        }
-                    }
-                    // append signed decimal
-                    int wrote =
-                        snprintf(&buffer[b_idx], 20, "%lld", (long long)sval);
-                    if (wrote < 0)
-                        wrote = 0;
-                    b_idx += wrote;
-                } else {
-                    // unsigned
-                    unsigned long long uval = (unsigned long long)v;
-                    int wrote = snprintf(&buffer[b_idx], 20, "%llu", uval);
-                    if (wrote < 0)
-                        wrote = 0;
-                    b_idx += wrote;
+            for (size_t i = 0; i < type->u.enum_t.value_count; i++) {
+                const fip_type_enum_value_t *value = &type->u.enum_t.values[i];
+                if (value->is_signed) {
+                    buffer[b_idx++] = '-';
                 }
+                int wrote = snprintf(&buffer[b_idx], 20, "%lu", value->value);
+                if (wrote < 0) {
+                    wrote = 0;
+                }
+                b_idx += wrote;
 
                 // separator between values
                 if (i + 1 < type->u.enum_t.value_count) {
@@ -2405,7 +2380,15 @@ void fip_print_sig_enum(const fip_sig_enum_t *const sig, const uint32_t id) {
     fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
     for (size_t i = 0; i < sig->value_count; i++) {
         fip_sig_enum_value_t *const value = &sig->values[i];
-        fip_print(id, FIP_DEBUG, "    %s: %u", value->tag, value->value);
+        if (value->value.is_signed) {
+            fip_print(                                                       //
+                id, FIP_DEBUG, "    %s: -%u", value->tag, value->value.value //
+            );
+        } else {
+            fip_print(                                                      //
+                id, FIP_DEBUG, "    %s: %u", value->tag, value->value.value //
+            );
+        }
     }
 }
 
@@ -2541,9 +2524,11 @@ void fip_clone_type(const fip_type_t *const src, fip_type_t *const dest) {
             dest->u.enum_t.is_signed = src->u.enum_t.bit_width;
             dest->u.enum_t.value_count = src->u.enum_t.value_count;
             if (src->u.enum_t.value_count > 0) {
-                const size_t val_size =
-                    sizeof(size_t) * src->u.enum_t.value_count;
-                dest->u.enum_t.values = (size_t *)malloc(val_size);
+                const size_t val_size = src->u.enum_t.value_count //
+                    * sizeof(fip_type_enum_value_t);
+                dest->u.enum_t.values = (fip_type_enum_value_t *)malloc( //
+                    val_size                                             //
+                );
                 memcpy(dest->u.enum_t.values, src->u.enum_t.values, val_size);
             }
             break;

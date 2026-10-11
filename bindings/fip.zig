@@ -140,9 +140,12 @@ pub const Type = extern struct {
         bit_width: u8 = 0,
         is_signed: bool = false,
         value_count: usize = 0,
-        /// The value is a size_t because it can be anything from i1 up to an u64 / i64.
-        /// The underlying enum type can differ
-        values: [*]usize = undefined,
+        values: [*]Value = undefined,
+
+        pub const Value = extern struct {
+            is_signed: bool = false,
+            value: usize = 0,
+        };
     };
 
     /// The struct representing fixed-size arrays
@@ -217,9 +220,7 @@ pub const Signature = extern struct {
         /// Struct representing a single enum value
         pub const Value = extern struct {
             tag: [NAME_SIZE:0]u8 = @splat(0),
-            /// The value is a size_t because it can be anything from i1 up to an u64 / i64.
-            /// The underlying enum type can differ
-            value: usize = 0,
+            value: Type.Enum.Value,
         };
 
         pub const print = print_sig_enum;
