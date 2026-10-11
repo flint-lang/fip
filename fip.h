@@ -2260,6 +2260,7 @@ char const *fip_type_to_string(   //
             buffer[b_idx++] = '(';
             const uint8_t type_name_len = strlen(type->u.named.name);
             memcpy(&buffer[b_idx], type->u.named.name, type_name_len);
+            b_idx += type_name_len;
             buffer[b_idx++] = ')';
             break;
         }

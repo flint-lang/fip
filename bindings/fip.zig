@@ -234,13 +234,13 @@ pub const Signature = extern struct {
         pub const clone = clone_sig_opaque;
     };
 
-    pub fn print(self: *const Signature) void {
+    pub fn print(self: *const Signature, id: u32) void {
         switch (self.tag) {
-            .unknown => void,
-            .@"fn" => |@"fn"| @"fn".print(),
-            .data => |data| data.print(),
-            .@"enum" => |@"enum"| @"enum".print(),
-            .@"opaque" => |@"opaque"| @"opaque".print(),
+            .unknown => {},
+            .@"fn" => self.u.@"fn".print(id),
+            .data => self.u.data.print(id),
+            .@"enum" => self.u.@"enum".print(id),
+            .@"opaque" => self.u.@"opaque".print(id),
         }
     }
 
