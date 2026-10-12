@@ -1405,7 +1405,7 @@ void fip_encode_msg(const fip_msg_t *message) {
     // 'idx' starts at 4, since the first 4 bytes need to be filled with the
     // size of the message itself
     // The first character in the buffer is the message type
-    b_idx = 0;
+    b_idx = 4;
     buffer[b_idx++] = message->tag;
     switch (message->tag) {
         case FIP_MSG_UNKNOWN:
