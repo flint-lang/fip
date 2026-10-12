@@ -248,10 +248,24 @@ pub const Signature = extern struct {
     pub const Tag = EnumFromExternUnion(U, u8);
     pub const U = extern union {
         unknown: void,
+        alias: Alias,
         @"fn": Fn,
         data: Data,
         @"enum": Enum,
         @"opaque": Opaque,
+    };
+
+    pub const Alias = extern struct {
+        origin: [NAME_SIZE:0]u8 = @splat(0),
+        alias: [NAME_SIZE:0]u8 = @splat(0),
+
+        pub const print = print_sig_alias;
+        pub const clone = clone_sig_alias;
+
+        pub fn equals(self: *const Alias, other: *const Alias) bool {
+            return std.mem.eql(u8, &self.origin, &other.origin) and
+                std.mem.eql(u8, &self.alias, &other.alias);
+        }
     };
 
     /// Struct representing the signature of a FIP-defined function
@@ -381,6 +395,7 @@ pub const Signature = extern struct {
     pub fn print(self: *const Signature, id: u32) void {
         switch (self.tag) {
             .unknown => {},
+            .alias => self.u.alias.print(id),
             .@"fn" => self.u.@"fn".print(id),
             .data => self.u.data.print(id),
             .@"enum" => self.u.@"enum".print(id),
@@ -392,6 +407,7 @@ pub const Signature = extern struct {
         dest.tag = self.tag;
         switch (self.tag) {
             .unknown => {},
+            .alias => self.u.alias.clone(&dest.u.alias),
             .@"fn" => self.u.@"fn".clone(&dest.u.@"fn"),
             .data => self.u.data.clone(&dest.u.data),
             .@"enum" => self.u.@"enum".clone(&dest.u.@"enum"),
@@ -405,6 +421,7 @@ pub const Signature = extern struct {
         }
         return switch (self.tag) {
             .unknown => false,
+            .alias => self.u.alias.equals(&other.u.alias),
             .@"fn" => self.u.@"fn".equals(&other.u.@"fn"),
             .data => self.u.data.equals(&other.u.data),
             .@"enum" => self.u.@"enum".equals(&other.u.@"enum"),
@@ -607,6 +624,14 @@ pub const create_hash = fip_create_hash;
 extern fn fip_type_to_string(@"type": *const Type, is_top_level: bool) [*c]const u8;
 pub const type_to_string = fip_type_to_string;
 
+/// @function `fip_print_sig_alias`
+/// @brief Prints a parsed alias signature to the console
+///
+/// @param `sig` The alias signature to print
+/// @param `id` The id of the process in which the signature is printed
+extern fn fip_print_sig_alias(sig: *const Signature.Alias, id: u32) void;
+pub const print_sig_alias = fip_print_sig_alias;
+
 /// @function `fip_print_sig_fn`
 /// @brief Prints a parsed function signature to the console
 ///
@@ -638,6 +663,14 @@ pub const print_sig_enum = fip_print_sig_enum;
 /// @param `id` The id of the process in which the signature is printed
 extern fn fip_print_sig_opaque(sig: *const Signature.Opaque, id: u32) void;
 pub const print_sig_opaque = fip_print_sig_opaque;
+
+/// @function `fip_clone_sig_alias`
+/// @brief Clones a given alias signature from the source to the destination
+///
+/// @param `src` The source to clone
+/// @param `dest` The signature to fill
+extern fn fip_clone_sig_alias(src: *const Signature.Alias, dest: *Signature.Alias) void;
+pub const clone_sig_alias = fip_clone_sig_alias;
 
 /// @function `fip_clone_sig_fn`
 /// @brief Clones a given function signature from the source to the destination

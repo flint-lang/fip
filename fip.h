@@ -242,6 +242,13 @@ typedef struct fip_type_t {
  * ====================
  */
 
+/// @typedef `fip_sig_alias_t`
+/// @brief Struct representing type aliases (like typedefs)
+typedef struct {
+    char origin[FIP_NAME_SIZE];
+    char alias[FIP_NAME_SIZE];
+} fip_sig_alias_t;
+
 /// @typedef `fip_sig_fn_arg_t`
 /// @brief Struct representing a single arugment of a FIP-defined function
 typedef struct {
@@ -300,6 +307,7 @@ typedef struct {
 /// @brief Enum of all possible signature types
 typedef enum fip_sig_tag_e : uint8_t {
     FIP_SIG_UNKNOWN = 0,
+    FIP_SIG_ALIAS,
     FIP_SIG_FUNCTION,
     FIP_SIG_DATA,
     FIP_SIG_ENUM,
@@ -311,6 +319,7 @@ typedef enum fip_sig_tag_e : uint8_t {
 typedef struct {
     fip_sig_tag_e tag;
     union {
+        fip_sig_alias_t alias;
         fip_sig_fn_t fn;
         fip_sig_data_t data;
         fip_sig_enum_t enum_t;
@@ -550,6 +559,13 @@ const char *fip_type_to_string(   //
     const bool is_top_level       //
 );
 
+/// @function `fip_print_sig_alias`
+/// @brief Prints a parsed alias signature to the console
+///
+/// @param `sig` The alias signature to print
+/// @param `id` The id of the process in which the signature is printed
+void fip_print_sig_alias(const fip_sig_alias_t *const sig, const uint32_t id);
+
 /// @function `fip_print_sig_fn`
 /// @brief Prints a parsed function signature to the console
 ///
@@ -577,6 +593,16 @@ void fip_print_sig_enum(const fip_sig_enum_t *const sig, const uint32_t id);
 /// @param `sig` The opaque signature to print
 /// @param `id` The id of the process in which the signature is printed
 void fip_print_sig_opaque(const fip_sig_opaque_t *const sig, const uint32_t id);
+
+/// @function `fip_clone_sig_alias`
+/// @brief Clones a given alias signature from the source to the destination
+///
+/// @param `src` The source to clone
+/// @param `dest` The signature to fill
+void fip_clone_sig_alias(             //
+    const fip_sig_alias_t *const src, //
+    fip_sig_alias_t *const dest       //
+);
 
 /// @function `fip_clone_sig_fn`
 /// @brief Clones a given function signature from the source to the destination
@@ -1056,10 +1082,10 @@ void fip_print_msg(const fip_msg_t *message, const uint32_t id) {
             break;
         case FIP_MSG_CONNECT_REQUEST:
             fip_print(id, FIP_DEBUG, "FIP_MSG_CONNECT_REQUEST: {");
-            fip_print(id, FIP_DEBUG, "  .setup_ok: %d", //
-                message->u.con_req.setup_ok             //
+            fip_print(id, FIP_DEBUG, "  .setup_ok: %s",        //
+                message->u.con_req.setup_ok ? "true" : "false" //
             );
-            fip_print(id, FIP_DEBUG, "  .version: %d.%d:%d", //
+            fip_print(id, FIP_DEBUG, "  .version: %d.%d.%d", //
                 message->u.con_req.version.major,            //
                 message->u.con_req.version.minor,            //
                 message->u.con_req.version.patch             //
@@ -1075,6 +1101,12 @@ void fip_print_msg(const fip_msg_t *message, const uint32_t id) {
                 case FIP_SIG_UNKNOWN:
                     fip_print(id, FIP_DEBUG, "  .type: UNKNOWN");
                     break;
+                case FIP_SIG_ALIAS:
+                    fip_print(id, FIP_DEBUG, "  .type: ALIAS");
+                    fip_print(id, FIP_DEBUG, "  .signature: {");
+                    fip_print_sig_alias(&message->u.sym_req.sig.u.alias, id);
+                    fip_print(id, FIP_DEBUG, "  }");
+                    break;
                 case FIP_SIG_FUNCTION:
                     fip_print(id, FIP_DEBUG, "  .type: FUNCTION");
                     fip_print(id, FIP_DEBUG, "  .signature: {");
@@ -1083,15 +1115,21 @@ void fip_print_msg(const fip_msg_t *message, const uint32_t id) {
                     break;
                 case FIP_SIG_DATA:
                     fip_print(id, FIP_DEBUG, "  .type: DATA");
-                    fip_print(id, FIP_DEBUG, "  .signature: TODO");
+                    fip_print(id, FIP_DEBUG, "  .signature: {");
+                    fip_print_sig_data(&message->u.sym_req.sig.u.data, id);
+                    fip_print(id, FIP_DEBUG, "  }");
                     break;
                 case FIP_SIG_ENUM:
                     fip_print(id, FIP_DEBUG, "  .type: ENUM");
-                    fip_print(id, FIP_DEBUG, "  .signature: TODO");
+                    fip_print(id, FIP_DEBUG, "  .signature: {");
+                    fip_print_sig_enum(&message->u.sym_req.sig.u.enum_t, id);
+                    fip_print(id, FIP_DEBUG, "  }");
                     break;
                 case FIP_SIG_OPAQUE:
                     fip_print(id, FIP_DEBUG, "  .type: OPAQUE");
-                    fip_print(id, FIP_DEBUG, "  .signature: TODO");
+                    fip_print(id, FIP_DEBUG, "  .signature: {");
+                    fip_print_sig_opaque(&message->u.sym_req.sig.u.opaque, id);
+                    fip_print(id, FIP_DEBUG, "  }");
                     break;
             }
             fip_print(id, FIP_DEBUG, "}");
@@ -1105,6 +1143,12 @@ void fip_print_msg(const fip_msg_t *message, const uint32_t id) {
             switch (message->u.sym_res.sig.tag) {
                 case FIP_SIG_UNKNOWN:
                     fip_print(id, FIP_DEBUG, "  .type: UNKNOWN");
+                    break;
+                case FIP_SIG_ALIAS:
+                    fip_print(id, FIP_DEBUG, "  .type: ALIAS");
+                    fip_print(id, FIP_DEBUG, "  .signature: {");
+                    fip_print_sig_alias(&message->u.sym_res.sig.u.alias, id);
+                    fip_print(id, FIP_DEBUG, "  }");
                     break;
                 case FIP_SIG_FUNCTION:
                     fip_print(id, FIP_DEBUG, "  .type: FUNCTION");
@@ -1198,27 +1242,43 @@ void fip_print_msg(const fip_msg_t *message, const uint32_t id) {
                     case FIP_SIG_UNKNOWN:
                         fip_print(id, FIP_DEBUG, "  .type: UNKNOWN");
                         break;
+                    case FIP_SIG_ALIAS:
+                        fip_print(id, FIP_DEBUG, "  .type: ALIAS");
+                        fip_print(id, FIP_DEBUG, "  .signature: {");
+                        fip_print_sig_alias(                        //
+                            &message->u.tag_sym_res.sig.u.alias, id //
+                        );
+                        fip_print(id, FIP_DEBUG, "  }");
+                        break;
                     case FIP_SIG_FUNCTION:
                         fip_print(id, FIP_DEBUG, "  .type: FUNCTION");
+                        fip_print(id, FIP_DEBUG, "  .signature: {");
                         fip_print_sig_fn(&message->u.tag_sym_res.sig.u.fn, id);
+                        fip_print(id, FIP_DEBUG, "  }");
                         break;
                     case FIP_SIG_DATA:
                         fip_print(id, FIP_DEBUG, "  .type: DATA");
+                        fip_print(id, FIP_DEBUG, "  .signature: {");
                         fip_print_sig_data(                        //
                             &message->u.tag_sym_res.sig.u.data, id //
                         );
+                        fip_print(id, FIP_DEBUG, "  }");
                         break;
                     case FIP_SIG_ENUM:
                         fip_print(id, FIP_DEBUG, "  .type: ENUM");
+                        fip_print(id, FIP_DEBUG, "  .signature: {");
                         fip_print_sig_enum(                          //
                             &message->u.tag_sym_res.sig.u.enum_t, id //
                         );
+                        fip_print(id, FIP_DEBUG, "  }");
                         break;
                     case FIP_SIG_OPAQUE:
                         fip_print(id, FIP_DEBUG, "  .type: OPAQUE");
+                        fip_print(id, FIP_DEBUG, "  .signature: {");
                         fip_print_sig_opaque(                        //
                             &message->u.tag_sym_res.sig.u.opaque, id //
                         );
+                        fip_print(id, FIP_DEBUG, "  }");
                         break;
                 }
             }
@@ -1305,6 +1365,21 @@ void fip_encode_type(const fip_type_t *type) {
             }
             break;
         }
+    }
+}
+
+void fip_encode_sig_alias(const fip_sig_alias_t *sig) {
+    const uint8_t origin_len = strlen(sig->origin);
+    buffer[b_idx++] = origin_len;
+    if (origin_len > 0) {
+        memcpy(&buffer[b_idx], sig->origin, origin_len);
+        b_idx += origin_len;
+    }
+    const uint8_t alias_len = strlen(sig->alias);
+    buffer[b_idx++] = alias_len;
+    if (alias_len > 0) {
+        memcpy(&buffer[b_idx], sig->alias, alias_len);
+        b_idx += alias_len;
     }
 }
 
@@ -1426,13 +1501,19 @@ void fip_encode_msg(const fip_msg_t *message) {
             buffer[b_idx++] = message->u.sym_req.sig.tag;
             switch (message->u.sym_req.sig.tag) {
                 case FIP_SIG_UNKNOWN:
+                    assert(false && "TODO");
+                    break;
+                case FIP_SIG_ALIAS:
+                    assert(false && "TODO");
                     break;
                 case FIP_SIG_FUNCTION:
                     fip_encode_sig_fn(&message->u.sym_req.sig.u.fn);
                     break;
                 case FIP_SIG_DATA:
+                    assert(false && "TODO");
                     break;
                 case FIP_SIG_ENUM:
+                    assert(false && "TODO");
                     break;
                 case FIP_SIG_OPAQUE:
                     fip_encode_sig_opaque(&message->u.sym_req.sig.u.opaque);
@@ -1449,6 +1530,10 @@ void fip_encode_msg(const fip_msg_t *message) {
             buffer[b_idx++] = message->u.sym_res.sig.tag;
             switch (message->u.sym_res.sig.tag) {
                 case FIP_SIG_UNKNOWN:
+                    assert(false && "TODO");
+                    break;
+                case FIP_SIG_ALIAS:
+                    fip_encode_sig_alias(&message->u.sym_res.sig.u.alias);
                     break;
                 case FIP_SIG_FUNCTION:
                     fip_encode_sig_fn(&message->u.sym_res.sig.u.fn);
@@ -1520,6 +1605,12 @@ void fip_encode_msg(const fip_msg_t *message) {
                 buffer[b_idx++] = message->u.tag_sym_res.sig.tag;
                 switch (message->u.tag_sym_res.sig.tag) {
                     case FIP_SIG_UNKNOWN:
+                        assert(false && "TODO");
+                        break;
+                    case FIP_SIG_ALIAS:
+                        fip_encode_sig_alias(                   //
+                            &message->u.tag_sym_res.sig.u.alias //
+                        );
                         break;
                     case FIP_SIG_FUNCTION:
                         fip_encode_sig_fn(&message->u.tag_sym_res.sig.u.fn);
@@ -1628,6 +1719,19 @@ void fip_decode_type(fip_type_t *const type) {
             }
             break;
         }
+    }
+}
+
+void fip_decode_sig_alias(fip_sig_alias_t *const sig) {
+    const uint8_t origin_len = buffer[b_idx++];
+    if (origin_len > 0) {
+        memcpy(sig->origin, &buffer[b_idx], origin_len);
+        b_idx += origin_len;
+    }
+    const uint8_t alias_len = buffer[b_idx++];
+    if (alias_len > 0) {
+        memcpy(sig->alias, &buffer[b_idx], alias_len);
+        b_idx += alias_len;
     }
 }
 
@@ -1758,6 +1862,10 @@ void fip_decode_msg(fip_msg_t *const message) {
             message->u.sym_req.sig.tag = (fip_sig_tag_e)buffer[b_idx++];
             switch (message->u.sym_req.sig.tag) {
                 case FIP_SIG_UNKNOWN:
+                    assert(false && "TODO");
+                    break;
+                case FIP_SIG_ALIAS:
+                    fip_decode_sig_alias(&message->u.sym_req.sig.u.alias);
                     break;
                 case FIP_SIG_FUNCTION:
                     fip_decode_sig_fn(&message->u.sym_req.sig.u.fn);
@@ -1783,6 +1891,10 @@ void fip_decode_msg(fip_msg_t *const message) {
             message->u.sym_res.sig.tag = (fip_sig_tag_e)buffer[b_idx++];
             switch (message->u.sym_res.sig.tag) {
                 case FIP_SIG_UNKNOWN:
+                    assert(false && "TODO");
+                    break;
+                case FIP_SIG_ALIAS:
+                    fip_decode_sig_alias(&message->u.sym_res.sig.u.alias);
                     break;
                 case FIP_SIG_FUNCTION:
                     fip_decode_sig_fn(&message->u.sym_res.sig.u.fn);
@@ -1846,6 +1958,12 @@ void fip_decode_msg(fip_msg_t *const message) {
                 message->u.tag_sym_res.sig.tag = (fip_sig_tag_e)buffer[b_idx++];
                 switch (message->u.tag_sym_res.sig.tag) {
                     case FIP_SIG_UNKNOWN:
+                        assert(false && "TODO");
+                        break;
+                    case FIP_SIG_ALIAS:
+                        fip_decode_sig_alias(                   //
+                            &message->u.tag_sym_res.sig.u.alias //
+                        );
                         break;
                     case FIP_SIG_FUNCTION:
                         fip_decode_sig_fn(&message->u.tag_sym_res.sig.u.fn);
@@ -1920,6 +2038,13 @@ void fip_free_msg(fip_msg_t *const message) {
                 case FIP_SIG_UNKNOWN:
                     // Do nothing on already freed / unknwon symbol
                     break;
+                case FIP_SIG_ALIAS: {
+                    sym_req->sig.tag = FIP_SIG_UNKNOWN;
+                    fip_sig_alias_t *const alias = &sym_req->sig.u.alias;
+                    memset(alias->origin, 0, FIP_NAME_SIZE);
+                    memset(alias->alias, 0, FIP_NAME_SIZE);
+                    break;
+                }
                 case FIP_SIG_FUNCTION: {
                     sym_req->sig.tag = FIP_SIG_UNKNOWN;
                     fip_sig_fn_t *const fn = &sym_req->sig.u.fn;
@@ -1985,6 +2110,13 @@ void fip_free_msg(fip_msg_t *const message) {
                 case FIP_SIG_UNKNOWN:
                     // Do nothing on already freed / unknwon symbol
                     break;
+                case FIP_SIG_ALIAS: {
+                    sym_res->sig.tag = FIP_SIG_UNKNOWN;
+                    fip_sig_alias_t *const alias = &sym_res->sig.u.alias;
+                    memset(alias->origin, 0, FIP_NAME_SIZE);
+                    memset(alias->alias, 0, FIP_NAME_SIZE);
+                    break;
+                }
                 case FIP_SIG_FUNCTION: {
                     sym_res->sig.tag = FIP_SIG_UNKNOWN;
                     fip_sig_fn_t *const fn = &sym_res->sig.u.fn;
@@ -2067,6 +2199,13 @@ void fip_free_msg(fip_msg_t *const message) {
             switch (tag_sym_res->sig.tag) {
                 case FIP_SIG_UNKNOWN:
                     break;
+                case FIP_SIG_ALIAS: {
+                    tag_sym_res->sig.tag = FIP_SIG_UNKNOWN;
+                    fip_sig_alias_t *const alias = &tag_sym_res->sig.u.alias;
+                    memset(alias->origin, 0, FIP_NAME_SIZE);
+                    memset(alias->alias, 0, FIP_NAME_SIZE);
+                    break;
+                }
                 case FIP_SIG_FUNCTION: {
                     fip_sig_fn_t *const fn = &tag_sym_res->sig.u.fn;
                     memset(fn->name, 0, FIP_NAME_SIZE);
@@ -2134,6 +2273,13 @@ void fip_free_sig_list(fip_sig_list_t *const list) {
         switch (sig->tag) {
             case FIP_SIG_UNKNOWN:
                 break;
+            case FIP_SIG_ALIAS: {
+                sig->tag = FIP_SIG_UNKNOWN;
+                fip_sig_alias_t *const alias = &sig->u.alias;
+                memset(alias->origin, 0, FIP_NAME_SIZE);
+                memset(alias->alias, 0, FIP_NAME_SIZE);
+                break;
+            }
             case FIP_SIG_FUNCTION: {
                 fip_sig_fn_t *const fn = &sig->u.fn;
                 memset(fn->name, 0, FIP_NAME_SIZE);
@@ -2333,6 +2479,12 @@ char const *fip_type_to_string(   //
     return buffer;
 }
 
+void fip_print_sig_alias(const fip_sig_alias_t *const sig, const uint32_t id) {
+    fip_print(id, FIP_DEBUG, "  Alias Signature:");
+    fip_print(id, FIP_DEBUG, "    origin: %s", sig->origin);
+    fip_print(id, FIP_DEBUG, "    alias: %s", sig->alias);
+}
+
 void fip_print_sig_fn(const fip_sig_fn_t *const sig, const uint32_t id) {
     fip_print(id, FIP_DEBUG, "  Function Signature:");
     fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
@@ -2398,6 +2550,14 @@ void fip_print_sig_opaque(             //
 ) {
     fip_print(id, FIP_DEBUG, "  Opaque Signature:");
     fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
+}
+
+void fip_clone_sig_alias(             //
+    const fip_sig_alias_t *const src, //
+    fip_sig_alias_t *const dest       //
+) {
+    memcpy(dest->origin, src->origin, FIP_NAME_SIZE);
+    memcpy(dest->alias, src->alias, FIP_NAME_SIZE);
 }
 
 void fip_clone_sig_fn(const fip_sig_fn_t *const src, fip_sig_fn_t *const dest) {
@@ -2933,6 +3093,11 @@ fip_tag_request_result_t fip_master_tag_request(const fip_msg_t *message) {
         switch (incoming.u.tag_sym_res.sig.tag) {
             case FIP_SIG_UNKNOWN:
                 break;
+            case FIP_SIG_ALIAS:
+                fip_clone_sig_alias(                                        //
+                    &incoming.u.tag_sym_res.sig.u.alias, &last_sig->u.alias //
+                );
+                break;
             case FIP_SIG_FUNCTION: {
                 fip_clone_sig_fn(                                     //
                     &incoming.u.tag_sym_res.sig.u.fn, &last_sig->u.fn //
@@ -3049,7 +3214,12 @@ void fip_slave_send_message(const fip_msg_t *message, const uint32_t id) {
     fip_encode_msg(message);
     uint32_t msg_len;
     memcpy(&msg_len, buffer, sizeof(uint32_t));
-    size_t written_bytes = fwrite(buffer, 1, msg_len + 4, stdout);
+    for (size_t i = 0; i < msg_len; i++) {
+        fip_print(id, FIP_DEBUG, "buffer[%lu] = '%d'", i,
+            buffer[i + sizeof(uint32_t)]);
+    }
+    size_t written_bytes =
+        fwrite(buffer, 1, msg_len + sizeof(uint32_t), stdout);
     if (written_bytes != msg_len + 4) {
         fip_print(id, FIP_ERROR, "Failed to write message");
         return;
