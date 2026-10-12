@@ -119,6 +119,10 @@ pub const Type = extern struct {
     /// The struct representing a pointer type
     pub const Pointer = extern struct {
         base_type: *Type,
+
+        pub fn equals(self: *const Pointer, other: *const Pointer) bool {
+            return self.base_type.equals(other.base_type);
+        }
     };
 
     /// The struct representing a struct type
@@ -126,12 +130,31 @@ pub const Type = extern struct {
         name: [NAME_SIZE:0]u8 = @splat(0),
         field_count: usize = 0,
         fields: [*]Type = undefined,
+
+        pub fn equals(self: *const Struct, other: *const Struct) bool {
+            if (!std.mem.eql(u8, &self.name, &other.name)) {
+                return false;
+            }
+            if (self.field_count != other.field_count) {
+                return false;
+            }
+            for (0..self.field_count) |i| {
+                if (!self.fields[i].equals(&other.fields[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
     };
 
     /// The struct representing named types, to reduce the amount of re-typing.
     /// A self-referential type contains a named type, for example, or all later references of already-known types are named types too
     pub const Named = extern struct {
         name: [NAME_SIZE:0]u8 = @splat(0),
+
+        pub fn equals(self: *const Named, other: *const Named) bool {
+            return std.mem.eql(u8, &self.name, &other.name);
+        }
     };
 
     /// The struct representing enum types
@@ -145,23 +168,76 @@ pub const Type = extern struct {
         pub const Value = extern struct {
             is_signed: bool = false,
             value: usize = 0,
+
+            pub fn equals(self: Value, other: Value) bool {
+                return self.is_signed == other.is_signed and
+                    self.value == other.value;
+            }
         };
+
+        pub fn equals(self: *const Enum, other: *const Enum) bool {
+            if (!std.mem.eql(u8, &self.name, &other.name)) {
+                return false;
+            }
+            if (self.bit_width != other.bit_width) {
+                return false;
+            }
+            if (self.is_signed != other.is_signed) {
+                return false;
+            }
+            if (self.value_count != other.value_count) {
+                return false;
+            }
+            for (0..self.value_count) |i| {
+                if (!self.values[i].equals(other.values[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
     };
 
     /// The struct representing fixed-size arrays
     pub const Array = extern struct {
         size: usize = 0,
         base_type: *Type,
+
+        pub fn equals(self: *const Array, other: *const Array) bool {
+            return self.size == other.size and
+                self.base_type.equals(other.base_type);
+        }
     };
 
     /// @brief The struct representing a named opaque type
     pub const Opaque = extern struct {
         name: [NAME_SIZE:0]u8 = @splat(0),
+
+        pub fn equals(self: *const Opaque, other: *const Opaque) bool {
+            return std.mem.eql(u8, &self.name, &other.name);
+        }
     };
 
     pub const to_string = type_to_string;
     pub const clone = clone_type;
     pub const free = free_type;
+
+    pub fn equals(self: *const Type, other: *const Type) bool {
+        if (self.is_mutable != other.is_mutable) {
+            return false;
+        }
+        if (self.tag != other.tag) {
+            return false;
+        }
+        return switch (self.tag) {
+            .primitive => self.u.primitive == other.u.primitive,
+            .pointer => self.u.pointer.equals(&other.u.pointer),
+            .@"struct" => self.u.@"struct".equals(&other.u.@"struct"),
+            .named => self.u.named.equals(&other.u.named),
+            .@"enum" => self.u.@"enum".equals(&other.u.@"enum"),
+            .array => self.u.array.equals(&other.u.array),
+            .@"opaque" => self.u.@"opaque".equals(&other.u.@"opaque"),
+        };
+    }
 };
 
 /// Union representing a single FIP symbol signature
@@ -190,10 +266,35 @@ pub const Signature = extern struct {
         pub const Arg = extern struct {
             name: [NAME_SIZE:0]u8 = @splat(0),
             type: Type,
+
+            pub fn equals(self: *const Arg, other: *const Arg) bool {
+                return std.mem.eql(u8, &self.name, &other.name) and
+                    self.type.equals(&other.type);
+            }
         };
 
         pub const print = print_sig_fn;
         pub const clone = clone_sig_fn;
+
+        pub fn equals(self: *const Fn, other: *const Fn) bool {
+            if (!std.mem.eql(u8, &self.name, &other.name)) {
+                return false;
+            }
+            if (self.args_len != other.args_len or self.rets_len != other.rets_len) {
+                return false;
+            }
+            for (0..self.args_len) |i| {
+                if (!self.args[i].equals(&other.args[i])) {
+                    return false;
+                }
+            }
+            for (0..self.rets_len) |i| {
+                if (!self.rets[i].equals(&other.rets[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
     };
 
     pub const Data = extern struct {
@@ -204,10 +305,30 @@ pub const Signature = extern struct {
         pub const Field = extern struct {
             name: [NAME_SIZE:0]u8 = @splat(0),
             type: Type,
+
+            pub fn equals(self: *const Field, other: *const Field) bool {
+                return std.mem.eql(u8, &self.name, &other.name) and
+                    self.type.equals(&other.type);
+            }
         };
 
         pub const print = print_sig_data;
         pub const clone = clone_sig_data;
+
+        pub fn equals(self: *const Data, other: *const Data) bool {
+            if (!std.mem.eql(u8, &self.name, &other.name)) {
+                return false;
+            }
+            if (self.field_count != other.field_count) {
+                return false;
+            }
+            for (0..self.field_count) |i| {
+                if (!self.fields[i].equals(&other.fields[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
     };
 
     /// Struct representing the signature of a FIP-defined enum
@@ -225,6 +346,24 @@ pub const Signature = extern struct {
 
         pub const print = print_sig_enum;
         pub const clone = clone_sig_enum;
+
+        pub fn equals(self: *const Enum, other: *const Enum) bool {
+            if (!std.mem.eql(u8, &self.name, &other.name)) {
+                return false;
+            }
+            if (self.type != other.type) {
+                return false;
+            }
+            if (self.value_count != other.value_count) {
+                return false;
+            }
+            for (0..self.value_count) |i| {
+                if (!self.values[i].value.equals(other.values[i].value)) {
+                    return false;
+                }
+            }
+            return true;
+        }
     };
 
     /// Struct representing the signature of a FIP-defined named opaque type
@@ -233,6 +372,10 @@ pub const Signature = extern struct {
 
         pub const print = print_sig_opaque;
         pub const clone = clone_sig_opaque;
+
+        pub fn equals(self: *const Opaque, other: *const Opaque) bool {
+            return std.mem.eql(u8, &self.name, &other.name);
+        }
     };
 
     pub fn print(self: *const Signature, id: u32) void {
@@ -245,14 +388,28 @@ pub const Signature = extern struct {
         }
     }
 
-    pub fn clone(self: *const Signature) void {
+    pub fn clone(self: *const Signature, dest: *Signature) void {
+        dest.tag = self.tag;
         switch (self.tag) {
-            .unknown => void,
-            .@"fn" => |@"fn"| @"fn".clone(),
-            .data => |data| data.clone(),
-            .@"enum" => |@"enum"| @"enum".clone(),
-            .@"opaque" => |@"opaque"| @"opaque".clone(),
+            .unknown => {},
+            .@"fn" => self.u.@"fn".clone(&dest.u.@"fn"),
+            .data => self.u.data.clone(&dest.u.data),
+            .@"enum" => self.u.@"enum".clone(&dest.u.@"enum"),
+            .@"opaque" => self.u.@"opaque".clone(&dest.u.@"opaque"),
         }
+    }
+
+    pub fn equals(self: *const Signature, other: *const Signature) bool {
+        if (self.tag != other.tag) {
+            return false;
+        }
+        return switch (self.tag) {
+            .unknown => false,
+            .@"fn" => self.u.@"fn".equals(&other.u.@"fn"),
+            .data => self.u.data.equals(&other.u.data),
+            .@"enum" => self.u.@"enum".equals(&other.u.@"enum"),
+            .@"opaque" => self.u.@"opaque".equals(&other.u.@"opaque"),
+        };
     }
 };
 
@@ -529,8 +686,8 @@ pub const clone_type = fip_clone_type;
 /// @param `output` The output parameter where the output of the command gets written to
 /// @param `command` The command to execute
 /// @return `int` The exit code of the executed command
-extern fn fip_execute_and_caputre(output: *allowzero [*c]const u8, command: [*c]const u8) c_int;
-pub const execute_and_capture = fip_execute_and_caputre;
+extern fn fip_execute_and_capture(output: *[*c]const u8, command: [*c]const u8) c_int;
+pub const execute_and_capture = fip_execute_and_capture;
 
 pub const master = if (defines.lib_mode != .master) @compileError("lib_mode != .master, master namespace unavailable") else struct {
     pub const MAX_ENABLED_MODULES = 16;
@@ -713,6 +870,8 @@ pub const master = if (defines.lib_mode != .master) @compileError("lib_mode != .
 };
 
 pub const slave = if (defines.lib_mode != .slave) @compileError("lib_mode != .slave, slave namespace unavailable") else struct {
+    pub const DELAY_MS = 1;
+
     /// @function `fip_slave_init`
     /// @brief Initializes the slave for stdio-based communication with named pipes
     ///
