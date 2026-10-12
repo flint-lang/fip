@@ -243,10 +243,10 @@ typedef struct fip_type_t {
  */
 
 /// @typedef `fip_sig_alias_t`
-/// @brief Struct representing type aliases (like typedefs)
+/// @brief Struct representing type type redefinitions (typedefs)
 typedef struct {
-    char origin[FIP_NAME_SIZE];
-    char alias[FIP_NAME_SIZE];
+    char name[FIP_NAME_SIZE];
+    fip_type_t type;
 } fip_sig_alias_t;
 
 /// @typedef `fip_sig_fn_arg_t`
@@ -1369,18 +1369,13 @@ void fip_encode_type(const fip_type_t *type) {
 }
 
 void fip_encode_sig_alias(const fip_sig_alias_t *sig) {
-    const uint8_t origin_len = strlen(sig->origin);
-    buffer[b_idx++] = origin_len;
-    if (origin_len > 0) {
-        memcpy(&buffer[b_idx], sig->origin, origin_len);
-        b_idx += origin_len;
+    const uint8_t name_len = strlen(sig->name);
+    buffer[b_idx++] = name_len;
+    if (name_len > 0) {
+        memcpy(&buffer[b_idx], sig->name, name_len);
+        b_idx += name_len;
     }
-    const uint8_t alias_len = strlen(sig->alias);
-    buffer[b_idx++] = alias_len;
-    if (alias_len > 0) {
-        memcpy(&buffer[b_idx], sig->alias, alias_len);
-        b_idx += alias_len;
-    }
+    fip_encode_type(&sig->type);
 }
 
 void fip_encode_sig_fn(const fip_sig_fn_t *sig) {
@@ -1403,13 +1398,11 @@ void fip_encode_sig_fn(const fip_sig_fn_t *sig) {
             memcpy(&buffer[b_idx], sig->args[i].name, arg_name_len);
             b_idx += arg_name_len;
         }
-        buffer[b_idx++] = sig->args[i].type.is_mutable;
         fip_encode_type(&sig->args[i].type);
     }
     memcpy(&buffer[b_idx], &sig->rets_len, sizeof(size_t));
     b_idx += sizeof(size_t);
     for (size_t i = 0; i < sig->rets_len; i++) {
-        buffer[b_idx++] = sig->rets[i].is_mutable;
         fip_encode_type(&sig->rets[i]);
     }
 }
@@ -1723,16 +1716,12 @@ void fip_decode_type(fip_type_t *const type) {
 }
 
 void fip_decode_sig_alias(fip_sig_alias_t *const sig) {
-    const uint8_t origin_len = buffer[b_idx++];
-    if (origin_len > 0) {
-        memcpy(sig->origin, &buffer[b_idx], origin_len);
-        b_idx += origin_len;
+    const uint8_t name_len = buffer[b_idx++];
+    if (name_len > 0) {
+        memcpy(sig->name, &buffer[b_idx], name_len);
+        b_idx += name_len;
     }
-    const uint8_t alias_len = buffer[b_idx++];
-    if (alias_len > 0) {
-        memcpy(sig->alias, &buffer[b_idx], alias_len);
-        b_idx += alias_len;
-    }
+    fip_decode_type(&sig->type);
 }
 
 void fip_decode_sig_fn(fip_sig_fn_t *const sig) {
@@ -1759,7 +1748,6 @@ void fip_decode_sig_fn(fip_sig_fn_t *const sig) {
                 memcpy(sig->args[i].name, &buffer[b_idx], arg_name_len);
                 b_idx += arg_name_len;
             }
-            sig->args[i].type.is_mutable = buffer[b_idx++];
             fip_decode_type(&sig->args[i].type);
         }
     } else {
@@ -1770,7 +1758,6 @@ void fip_decode_sig_fn(fip_sig_fn_t *const sig) {
     if (sig->rets_len > 0) {
         sig->rets = (fip_type_t *)malloc(sizeof(fip_type_t) * sig->rets_len);
         for (size_t i = 0; i < sig->rets_len; i++) {
-            sig->rets[i].is_mutable = buffer[b_idx++];
             fip_decode_type(&sig->rets[i]);
         }
     } else {
@@ -2041,8 +2028,8 @@ void fip_free_msg(fip_msg_t *const message) {
                 case FIP_SIG_ALIAS: {
                     sym_req->sig.tag = FIP_SIG_UNKNOWN;
                     fip_sig_alias_t *const alias = &sym_req->sig.u.alias;
-                    memset(alias->origin, 0, FIP_NAME_SIZE);
-                    memset(alias->alias, 0, FIP_NAME_SIZE);
+                    memset(alias->name, 0, FIP_NAME_SIZE);
+                    fip_free_type(&alias->type);
                     break;
                 }
                 case FIP_SIG_FUNCTION: {
@@ -2113,8 +2100,8 @@ void fip_free_msg(fip_msg_t *const message) {
                 case FIP_SIG_ALIAS: {
                     sym_res->sig.tag = FIP_SIG_UNKNOWN;
                     fip_sig_alias_t *const alias = &sym_res->sig.u.alias;
-                    memset(alias->origin, 0, FIP_NAME_SIZE);
-                    memset(alias->alias, 0, FIP_NAME_SIZE);
+                    memset(alias->name, 0, FIP_NAME_SIZE);
+                    fip_free_type(&alias->type);
                     break;
                 }
                 case FIP_SIG_FUNCTION: {
@@ -2202,8 +2189,8 @@ void fip_free_msg(fip_msg_t *const message) {
                 case FIP_SIG_ALIAS: {
                     tag_sym_res->sig.tag = FIP_SIG_UNKNOWN;
                     fip_sig_alias_t *const alias = &tag_sym_res->sig.u.alias;
-                    memset(alias->origin, 0, FIP_NAME_SIZE);
-                    memset(alias->alias, 0, FIP_NAME_SIZE);
+                    memset(alias->name, 0, FIP_NAME_SIZE);
+                    fip_free_type(&alias->type);
                     break;
                 }
                 case FIP_SIG_FUNCTION: {
@@ -2276,8 +2263,8 @@ void fip_free_sig_list(fip_sig_list_t *const list) {
             case FIP_SIG_ALIAS: {
                 sig->tag = FIP_SIG_UNKNOWN;
                 fip_sig_alias_t *const alias = &sig->u.alias;
-                memset(alias->origin, 0, FIP_NAME_SIZE);
-                memset(alias->alias, 0, FIP_NAME_SIZE);
+                memset(alias->name, 0, FIP_NAME_SIZE);
+                fip_free_type(&alias->type);
                 break;
             }
             case FIP_SIG_FUNCTION: {
@@ -2370,7 +2357,7 @@ void fip_create_hash(char hash[FIP_PATH_SIZE], const char *file_path) {
     }
 }
 
-char const *fip_type_to_string(   //
+const char *fip_type_to_string(   //
     const fip_type_t *const type, //
     const bool is_top_level       //
 ) {
@@ -2481,8 +2468,9 @@ char const *fip_type_to_string(   //
 
 void fip_print_sig_alias(const fip_sig_alias_t *const sig, const uint32_t id) {
     fip_print(id, FIP_DEBUG, "  Alias Signature:");
-    fip_print(id, FIP_DEBUG, "    origin: %s", sig->origin);
-    fip_print(id, FIP_DEBUG, "    alias: %s", sig->alias);
+    fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
+    fip_type_to_string(&sig->type, true);
+    fip_print(id, FIP_DEBUG, "    type: %s", buffer);
 }
 
 void fip_print_sig_fn(const fip_sig_fn_t *const sig, const uint32_t id) {
@@ -2556,8 +2544,8 @@ void fip_clone_sig_alias(             //
     const fip_sig_alias_t *const src, //
     fip_sig_alias_t *const dest       //
 ) {
-    memcpy(dest->origin, src->origin, FIP_NAME_SIZE);
-    memcpy(dest->alias, src->alias, FIP_NAME_SIZE);
+    memcpy(dest->name, src->name, FIP_NAME_SIZE);
+    fip_clone_type(&src->type, &dest->type);
 }
 
 void fip_clone_sig_fn(const fip_sig_fn_t *const src, fip_sig_fn_t *const dest) {

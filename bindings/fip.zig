@@ -256,15 +256,15 @@ pub const Signature = extern struct {
     };
 
     pub const Alias = extern struct {
-        origin: [NAME_SIZE:0]u8 = @splat(0),
-        alias: [NAME_SIZE:0]u8 = @splat(0),
+        name: [NAME_SIZE:0]u8 = @splat(0),
+        type: Type,
 
         pub const print = print_sig_alias;
         pub const clone = clone_sig_alias;
 
         pub fn equals(self: *const Alias, other: *const Alias) bool {
-            return std.mem.eql(u8, &self.origin, &other.origin) and
-                std.mem.eql(u8, &self.alias, &other.alias);
+            return std.mem.eql(u8, &self.name, &other.name) and
+                self.type.equals(&other.type);
         }
     };
 

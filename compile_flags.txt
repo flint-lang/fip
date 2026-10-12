@@ -18,6 +18,7 @@
 -Wunreachable-code
 -Wno-deprecated-declarations
 -Wno-deprecated
+-Wimplicit-fallthrough
 -fno-omit-frame-pointer
 -funwind-tables
 -ffunction-sections
