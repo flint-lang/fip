@@ -800,9 +800,9 @@ bool fip_master_receive_message_from(const uint32_t id);
 /// @function `fip_master_send_message_to`
 /// @brief Sends a message to the stdout of a given interop module
 ///
-/// @param `id` The id of the slave to send the message to
 /// @param `message` The message which will be sent
-void fip_master_send_message_to(const uint32_t id, const fip_msg_t *message);
+/// @param `id` The id of the slave to send the message to
+void fip_master_send_message_to(const fip_msg_t *message, const uint32_t id);
 
 /// @function `fip_master_cleanup`
 /// @brief Cleans up the master
@@ -842,9 +842,9 @@ bool fip_slave_receive_message();
 /// @function `fip_slave_send_message`
 /// @brief Sends a message to stdout
 ///
-/// @param `id` The id of the slave who tries to send the message
 /// @param `message` The message which will be sent
-void fip_slave_send_message(const uint32_t id, const fip_msg_t *message);
+/// @param `id` The id of the slave who tries to send the message
+void fip_slave_send_message(const fip_msg_t *message, const uint32_t id);
 
 /// @function `fip_slave_cleanup`
 /// @brief Cleans up the slave
@@ -2989,7 +2989,7 @@ bool fip_master_receive_message_from(const uint32_t id) {
     return true;
 }
 
-void fip_master_send_message_to(uint32_t id, const fip_msg_t *message) {
+void fip_master_send_message_to(const fip_msg_t *message, const uint32_t id) {
     FILE *slave_stdin = master_state.slave_stdin[id];
     if (slave_stdin == NULL) {
         fip_print(0, FIP_ERROR, "Cannot send msg to nonexistent slave %u", id);
@@ -3045,7 +3045,7 @@ bool fip_slave_receive_message() {
     return true;
 }
 
-void fip_slave_send_message(uint32_t id, const fip_msg_t *message) {
+void fip_slave_send_message(const fip_msg_t *message, const uint32_t id) {
     fip_encode_msg(message);
     uint32_t msg_len;
     memcpy(&msg_len, buffer, sizeof(uint32_t));
