@@ -152,8 +152,16 @@ pub const Type = extern struct {
     pub const Named = extern struct {
         name: [NAME_SIZE:0]u8 = @splat(0),
 
-        pub fn equals(self: *const Named, other: *const Named) bool {
-            return std.mem.eql(u8, &self.name, &other.name);
+        pub fn equals(self: *const Named, other: *const Type) bool {
+            return switch (other.tag) {
+                .primitive => false,
+                .pointer => false,
+                .@"struct" => std.mem.eql(u8, &self.name, &other.u.@"struct".name),
+                .named => std.mem.eql(u8, &self.name, &other.u.named.name),
+                .@"enum" => std.mem.eql(u8, &self.name, &other.u.@"enum".name),
+                .array => false,
+                .@"opaque" => std.mem.eql(u8, &self.name, &other.u.@"opaque".name),
+            };
         }
     };
 
@@ -225,14 +233,14 @@ pub const Type = extern struct {
         if (self.is_mutable != other.is_mutable) {
             return false;
         }
-        if (self.tag != other.tag) {
+        if (self.tag != .named and self.tag != other.tag) {
             return false;
         }
         return switch (self.tag) {
             .primitive => self.u.primitive == other.u.primitive,
             .pointer => self.u.pointer.equals(&other.u.pointer),
             .@"struct" => self.u.@"struct".equals(&other.u.@"struct"),
-            .named => self.u.named.equals(&other.u.named),
+            .named => self.u.named.equals(other),
             .@"enum" => self.u.@"enum".equals(&other.u.@"enum"),
             .array => self.u.array.equals(&other.u.array),
             .@"opaque" => self.u.@"opaque".equals(&other.u.@"opaque"),
@@ -280,11 +288,6 @@ pub const Signature = extern struct {
         pub const Arg = extern struct {
             name: [NAME_SIZE:0]u8 = @splat(0),
             type: Type,
-
-            pub fn equals(self: *const Arg, other: *const Arg) bool {
-                return std.mem.eql(u8, &self.name, &other.name) and
-                    self.type.equals(&other.type);
-            }
         };
 
         pub const print = print_sig_fn;
@@ -298,7 +301,8 @@ pub const Signature = extern struct {
                 return false;
             }
             for (0..self.args_len) |i| {
-                if (!self.args[i].equals(&other.args[i])) {
+                // Don't compare the names, as signature equidity is only determined by the type of the argument
+                if (!self.args[i].type.equals(&other.args[i].type)) {
                     return false;
                 }
             }
@@ -319,11 +323,6 @@ pub const Signature = extern struct {
         pub const Field = extern struct {
             name: [NAME_SIZE:0]u8 = @splat(0),
             type: Type,
-
-            pub fn equals(self: *const Field, other: *const Field) bool {
-                return std.mem.eql(u8, &self.name, &other.name) and
-                    self.type.equals(&other.type);
-            }
         };
 
         pub const print = print_sig_data;
@@ -337,7 +336,8 @@ pub const Signature = extern struct {
                 return false;
             }
             for (0..self.field_count) |i| {
-                if (!self.fields[i].equals(&other.fields[i])) {
+                // Don't compare the names, as signature equidity is only determined by the type of the field
+                if (!self.fields[i].type.equals(&other.fields[i].type)) {
                     return false;
                 }
             }
