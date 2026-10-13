@@ -1316,8 +1316,11 @@ void fip_encode_type(const fip_type_t *type) {
                 memcpy(&buffer[b_idx], type->u.struct_t.name, type_name_len);
                 b_idx += type_name_len;
             }
-            buffer[b_idx++] = (char)type->u.struct_t.field_count;
-            for (uint8_t i = 0; i < type->u.struct_t.field_count; i++) {
+            memcpy(                                                           //
+                &buffer[b_idx], &type->u.struct_t.field_count, sizeof(size_t) //
+            );
+            b_idx += sizeof(size_t);
+            for (size_t i = 0; i < type->u.struct_t.field_count; i++) {
                 fip_encode_type(&type->u.struct_t.fields[i]);
             }
             break;
@@ -3202,12 +3205,9 @@ void fip_slave_send_message(const fip_msg_t *message, const uint32_t id) {
     fip_encode_msg(message);
     uint32_t msg_len;
     memcpy(&msg_len, buffer, sizeof(uint32_t));
-    for (size_t i = 0; i < msg_len; i++) {
-        fip_print(id, FIP_DEBUG, "buffer[%lu] = '%d'", i,
-            buffer[i + sizeof(uint32_t)]);
-    }
-    size_t written_bytes =
-        fwrite(buffer, 1, msg_len + sizeof(uint32_t), stdout);
+    size_t written_bytes = fwrite(                    //
+        buffer, 1, msg_len + sizeof(uint32_t), stdout //
+    );
     if (written_bytes != msg_len + 4) {
         fip_print(id, FIP_ERROR, "Failed to write message");
         return;
