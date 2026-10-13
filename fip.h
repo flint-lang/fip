@@ -1348,9 +1348,9 @@ void fip_encode_type(const fip_type_t *type) {
             for (size_t i = 0; i < type->u.enum_t.value_count; i++) {
                 memcpy(                                        //
                     &buffer[b_idx], &type->u.enum_t.values[i], //
-                    sizeof(fip_sig_enum_value_t)               //
+                    sizeof(fip_type_enum_value_t)              //
                 );
-                b_idx += sizeof(fip_sig_enum_value_t);
+                b_idx += sizeof(fip_type_enum_value_t);
             }
             break;
         }
@@ -1804,11 +1804,12 @@ void fip_decode_sig_enum(fip_sig_enum_t *const sig) {
     memcpy(&sig->value_count, &buffer[b_idx], sizeof(size_t));
     b_idx += sizeof(size_t);
     // For enums we first stored all tags to reduce padding needs
-    sig->values = (fip_sig_enum_value_t *)malloc(         //
-        sizeof(fip_sig_enum_value_t *) * sig->value_count //
+    sig->values = (fip_sig_enum_value_t *)malloc(       //
+        sizeof(fip_sig_enum_value_t) * sig->value_count //
     );
     for (size_t i = 0; i < sig->value_count; i++) {
         const uint8_t tag_len = buffer[b_idx++];
+        memset(&sig->values[i].tag, 0, FIP_NAME_SIZE);
         if (tag_len > 0) {
             memcpy(sig->values[i].tag, &buffer[b_idx], tag_len);
             b_idx += tag_len;
@@ -2672,7 +2673,7 @@ void fip_clone_type(const fip_type_t *const src, fip_type_t *const dest) {
                 memcpy(dest->u.enum_t.name, src->u.enum_t.name, type_name_len);
             }
             dest->u.enum_t.bit_width = src->u.enum_t.bit_width;
-            dest->u.enum_t.is_signed = src->u.enum_t.bit_width;
+            dest->u.enum_t.is_signed = src->u.enum_t.is_signed;
             dest->u.enum_t.value_count = src->u.enum_t.value_count;
             if (src->u.enum_t.value_count > 0) {
                 const size_t val_size = src->u.enum_t.value_count //
