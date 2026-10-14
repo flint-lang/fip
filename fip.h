@@ -3232,7 +3232,7 @@ void fip_slave_open_log(const uint32_t id) {
     mkdir(".fip/log", 0777);
     snprintf(path, sizeof(path), ".fip/log/slave_%u.log", id);
 #endif
-    if (freopen(path, "a", stderr) != NULL) {
+    if (freopen(path, "w", stderr) != NULL) {
         // Make sure every write is flushed immediately so the log is always
         // up to date (stderr becomes fully buffered after freopen)
         setvbuf(stderr, NULL, _IONBF, 0);
