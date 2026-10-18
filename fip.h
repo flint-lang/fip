@@ -1454,8 +1454,11 @@ void fip_encode_sig_enum(const fip_sig_enum_t *sig) {
     }
     // And then we store all the values one after another
     for (size_t i = 0; i < sig->value_count; i++) {
-        memcpy(&buffer[b_idx], &sig->values[i].value, sizeof(size_t));
-        b_idx += sizeof(size_t);
+        memcpy(                                    //
+            &buffer[b_idx], &sig->values[i].value, //
+            sizeof(fip_type_enum_value_t)          //
+        );
+        b_idx += sizeof(fip_type_enum_value_t);
     }
 }
 
@@ -1817,8 +1820,11 @@ void fip_decode_sig_enum(fip_sig_enum_t *const sig) {
     }
     // And then we store all the values one after another
     for (size_t i = 0; i < sig->value_count; i++) {
-        memcpy(&sig->values[i].value, &buffer[b_idx], sizeof(size_t));
-        b_idx += sizeof(size_t);
+        memcpy(                                    //
+            &sig->values[i].value, &buffer[b_idx], //
+            sizeof(fip_type_enum_value_t)          //
+        );
+        b_idx += sizeof(fip_type_enum_value_t);
     }
 }
 
