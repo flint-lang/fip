@@ -3,27 +3,23 @@
 // #define FIP_DEBUG_MODE
 
 /*
- * This is the Flint Interop Protocol used for inter-process communcation
- * around interoperability. Both master and slaves will use this single header
- * file for their IPC. In the beginning all slaves are already running processes
- * and sleep, waiting for the connect message of the master. When being
- * connected to a master each slave waits for further instructions from the
- * master. Each slave has a direct connection to it's master but the master can
- * only broadcast messages to all slaves. Slaves may also broadcast to all other
- * processes.
+ * This is the Flint Interop Protocol used for inter-process communcation around interoperability.
+ * Both master and slaves will use this single header file for their IPC. In the beginning all
+ * slaves are already running processes and sleep, waiting for the connect message of the master.
+ * When being connected to a master each slave waits for further instructions from the master. Each
+ * slave has a direct connection to it's master but the master can only broadcast messages to all
+ * slaves. Slaves may also broadcast to all other processes.
  *
  * These are the functionalities that the FIP must provide:
  *   - Broadcast Connect (To connect the master to all slave modules)
  *   - Broadcast Listen (Slave waits for the master to send the connect message)
  *
- *   - Broadcast Symbol provide (When the master provides a symbol for it's
- * slaves)
+ *   - Broadcast Symbol provide (When the master provides a symbol for it's slaves)
  *   - Broadcast Symbol request (When the master requests a symbol)
  *   - Broadcast Symbol resolved (When a slave found the symbol)
  *   - Targetted Symbol resolved (The slave tells the master about the symbol)
  *
- *   - Broadcast Object request (When the master requests all compiled object
- * files)
+ *   - Broadcast Object request (When the master requests all compiled object files)
  *   - Targetted Object resolved (The path to the slave's object)
  */
 
@@ -171,9 +167,9 @@ typedef struct {
 } fip_type_struct_t;
 
 /// @typedef `fip_type_named_t`
-/// @brief The struct representing named types, to reduce the amount of
-/// re-typing. A self-referential type contains a named type, for example, or
-/// all later references of already-known types are named types too
+/// @brief The struct representing named types, to reduce the amount of re-typing.
+///        A self-referential type contains a named type, for example, or all later references of
+///        already-known types are named types too
 typedef struct {
     char name[FIP_NAME_SIZE];
 } fip_type_named_t;
@@ -435,21 +431,18 @@ typedef enum fip_msg_tag_e : uint8_t {
     FIP_MSG_COMPILE_REQUEST,
     // Slave responding compilation with .o file
     FIP_MSG_OBJECT_RESPONSE,
-    // The master requests that each IM searches for a certain tag and the
-    // symbols from that tag
+    // The master requests that each IM searches for a certain tag and the symbols from that tag
     FIP_MSG_TAG_REQUEST,
-    // The IM's response to the request. It sends whether it contains that
-    // searched-for tag. If it contains this tag then it will send all the tag
-    // symbol responses it contains. The master then reads every single sent tag
-    // symbol response of the IM
+    // The IM's response to the request. It sends whether it contains that searched-for tag. If it
+    // contains this tag then it will send all the tag symbol responses it contains. The master then
+    // reads every single sent tag symbol response of the IM
     FIP_MSG_TAG_PRESENT_RESPONSE,
-    // The master request a single IM to give it the next symbol in it's symbol
-    // list of the previously requested module tag. The slave will respond with
-    // symbol responses until it reaches the end of the list, responding with an
-    // empty symbol response
+    // The master request a single IM to give it the next symbol in it's symbol list of the
+    // previously requested module tag. The slave will respond with symbol responses until it
+    // reaches the end of the list, responding with an empty symbol response
     FIP_MSG_TAG_NEXT_SYMBOL_REQUEST,
-    // The IM's response to the tag request. It sends one symbol at a time and
-    // whether that was the last symbol it provides
+    // The IM's response to the tag request. It sends one symbol at a time and whether that was the
+    // last symbol it provides
     FIP_MSG_TAG_SYMBOL_RESPONSE,
     // Kill command comes last
     FIP_MSG_KILL,
@@ -479,8 +472,8 @@ typedef struct {
  */
 
 /// @function `fip_print`
-/// @brief Prints a message from the given module ID from the format string and
-/// the variadic arguments which will be forwarded to printf
+/// @brief Prints a message from the given module ID from the format string and the variadic
+///        arguments which will be forwarded to printf
 ///
 /// @param `id` The id of the process to print the message from
 /// @param `log_level` The log level of the current message to print
@@ -501,15 +494,13 @@ void fip_print(                      //
 void fip_print_msg(const fip_msg_t *message, const uint32_t id);
 
 /// @function `fip_encode_msg`
-/// @brief Encodes a given message into a string and stores it in the internal
-/// buffer
+/// @brief Encodes a given message into a string and stores it in the internal buffer
 ///
 /// @param `message` The message to encode into the internal buffer
 void fip_encode_msg(const fip_msg_t *message);
 
 /// @function `fip_decode_msg`
-/// @brief Tries to decode a message from the internal buffer and create a
-/// message from it
+/// @brief Tries to decode a message from the internal buffer and create a message from it
 ///
 /// @param `message` Pointer to the message where the result is stored
 void fip_decode_msg(fip_msg_t *const message);
@@ -533,27 +524,24 @@ void fip_free_msg(fip_msg_t *const message);
 void fip_free_sig_list(fip_sig_list_t *const list);
 
 /// @function `fip_create_hash`
-/// @brief Creates a 8 Byte character hash from the given file path to make
-/// differentiating between different files predictable in size. Each character
-/// in the 8 character hash is one of 63 possible characters (A-Z, a-z, 0-9, _)
-/// which means that the 8 Byte hash can have roughly as many unique hashes as a
-/// equivalent 48 bit number.
+/// @brief Creates a 8 Byte character hash from the given file path to make differentiating between
+///        different files predictable in size. Each character in the 8 character hash is one of 63
+///        possible characters (A-Z, a-z, 0-9, _) which means that the 8 Byte hash can have roughly
+///        as many unique hashes as a equivalent 48 bit number.
 ///
 /// @param `hash` The buffer in which to write the hash
 /// @param `file_path` The file path to turn into a 8 Byte hash
 void fip_create_hash(char hash[FIP_PATH_SIZE], const char *file_path);
 
 /// @function `fip_type_to_string`
-/// @brief "Prints" a given type into the internal buffer and returns a pointer
-/// into that buffer which then can be used to print the whole type in one
-/// fip_print call
+/// @brief "Prints" a given type into the internal buffer and returns a pointer into that buffer
+///        which then can be used to print the whole type in one fip_print call
 ///
 /// @param `type` The type to print into the internal buffer
-/// @param `is_top_level` Whether the type to string conversion is called at the
-///                       top level (true) or nested within itself (false)
-/// @return `const char *` A null-terminated string of the typ type stored in
-///                        the internal buffer. Callers do not own it nor are
-///                        they allowed to change it
+/// @param `is_top_level` Whether the type to string conversion is called at the top level (true) or
+///                       nested within itself (false)
+/// @return `const char *` A null-terminated string of the typ type stored in the internal buffer.
+///                        Callers do not own it nor are they allowed to change it
 const char *fip_type_to_string(   //
     const fip_type_t *const type, //
     const bool is_top_level       //
@@ -649,11 +637,10 @@ void fip_clone_sig_opaque(             //
 void fip_clone_type(const fip_type_t *const src, fip_type_t *const dest);
 
 /// @function `fip_execute_and_capture`
-/// @brief Executes the given command and captures both stdout and stderr in the
-/// output string. Returns the exit code of the executed command
+/// @brief Executes the given command and captures both stdout and stderr in the output string.
+/// Returns the exit code of the executed command
 ///
-/// @param `output` The output parameter where the output of the command gets
-/// written to
+/// @param `output` The output parameter where the output of the command gets written to
 /// @param `command` The command to execute
 /// @return `int` The exit code of the executed command
 int fip_execute_and_caputre(char **output, const char *command);
@@ -688,8 +675,7 @@ typedef struct {
 } fip_master_state_t;
 
 /// @typedef `fip_tag_request_status_e`
-/// @brief A simple enum desciring the exit code of the `fip_master_tag_request`
-/// function
+/// @brief A simple enum desciring the exit code of the `fip_master_tag_request` function
 typedef enum fip_tag_request_status_e : uint8_t {
     FIP_TAG_REQUEST_STATUS_OK,
     FIP_TAG_REQUEST_STATUS_ERR_FAULTY,
@@ -699,8 +685,8 @@ typedef enum fip_tag_request_status_e : uint8_t {
 } fip_tag_request_status_e;
 
 /// @typedef `fip_tag_request_result_t`
-/// @brief A structure containing the result type of the
-/// `fip_master_tag_request` function being an exit status and a list of symbols
+/// @brief A structure containing the result type of the `fip_master_tag_request` function being an
+///        exit status and a list of symbols
 typedef struct {
     fip_tag_request_status_e status;
     fip_sig_list_t *list;
@@ -717,10 +703,9 @@ typedef struct {
 extern fip_master_state_t master_state;
 
 /// @function `fip_copy_stream_lines`
-/// @brief Copies all lines from the `src` stream into the `dest` stream. Only
-/// copies full lines, and copies the lines as one unit. So, all leftover
-/// characters are, well, left, in the `src` and only full lines are written to
-/// `dest`
+/// @brief Copies all lines from the `src` stream into the `dest` stream. Only copies full lines,
+///        and copies the lines as one unit. So, all leftover characters are, well, left, in the
+///        `src` and only full lines are written to `dest`
 ///
 /// @param `src` The source stream from which lines are read
 /// @param `dest` The destination stream to which lines are copied to
@@ -732,13 +717,12 @@ void fip_copy_stream_lines(FILE *const src, FILE *const dest);
 void fip_print_slave_streams();
 
 /// @function `fip_spawn_interop_module`
-/// @brief Creates a new interop module and adds it's process ID to the list of
-/// modules in the interop modules parameter
+/// @brief Creates a new interop module and adds it's process ID to the list of modules in the
+///        interop modules parameter
 ///
 /// @param `modules` A pointer to the structure containing all the module PIDs
-/// @param `root_path` The root path of the project (the directory where the
-/// .fip directory is contained). The `module` program will be started in this
-/// directory
+/// @param `root_path` The root path of the project (the directory where the .fip directory is
+///                    contained). The `module` program will be started in this directory
 /// @param `module` The interop module to start
 /// @return `bool` Whether the interop module process creation was successful
 bool fip_spawn_interop_module(      //
@@ -748,8 +732,7 @@ bool fip_spawn_interop_module(      //
 );
 
 /// @function `fip_terminate_all_slaves`
-/// @brief Terminates all currently running slaves if they have not been
-/// terminated yet
+/// @brief Terminates all currently running slaves if they have not been terminated yet
 ///
 /// @param `modules` A pointer to the structure containing all the module PIDs
 void fip_terminate_all_slaves(fip_interop_modules_t *modules);
@@ -770,12 +753,11 @@ void fip_master_broadcast_message(const fip_msg_t *message);
 /// @function `fip_master_await_responses`
 /// @brief Waits for all slaves to respond with a message from stdin
 ///
-/// @param `responses` The responses of all slaves where the ID of the response
-/// in the array corresponds to the ID of the slave itself
+/// @param `responses` The responses of all slaves where the ID of the response in the array
+///                    corresponds to the ID of the slave itself
 /// @param `response_count` How many responses we got
 /// @param `expected_msg_tag` The tag of the expected message
-/// @return `uint8_t` How many responses were faulty (unable to be read) or had
-/// the wrong type
+/// @return `uint8_t` How many responses were faulty (unable to be read) or had the wrong type
 uint8_t fip_master_await_responses(      //
     fip_msg_t responses[FIP_MAX_SLAVES], //
     uint32_t *const response_count,      //
@@ -783,9 +765,8 @@ uint8_t fip_master_await_responses(      //
 );
 
 /// @function `fip_master_symbol_request`
-/// @brief Broadcasts a symbol request message and then awaits all
-/// symbol response messages and returns whether the requested
-/// symbol was found
+/// @brief Broadcasts a symbol request message and then awaits all symbol response messages and
+///        returns whether the requested symbol was found
 ///
 /// @param `message` The symbol request message to send
 /// @return `bool` Whether the requested symbol was found
@@ -794,20 +775,17 @@ uint8_t fip_master_await_responses(      //
 bool fip_master_symbol_request(const fip_msg_t *message);
 
 /// @function `fip_master_compile_request`
-/// @brief Broadcasts a compile request message and then awaits
-/// all object response messages and returns whether all modules
-/// were able to compile their sources
+/// @brief Broadcasts a compile request message and then awaits all object response messages and
+///        returns whether all modules were able to compile their sources
 ///
 /// @param `message` The compile request message to send
-/// @return `bool` Whether all interop modules were able to compile their
-/// source files
+/// @return `bool` Whether all interop modules were able to compile their source files
 ///
 /// @note This function asserts the message type to be FIP_MSG_COMPILE_REQUEST
 bool fip_master_compile_request(const fip_msg_t *message);
 
 /// @function `fip_master_tag_request`
-/// @brief Broadcasts a tag request message and then collects all the symbols of
-/// all interop modules
+/// @brief Broadcasts a tag request message and then collects all the symbols of all interop modules
 ///
 /// @param `message` The tag request message to send
 /// @return `fip_sig_list_t *` A list of all collected signatures from the tag
@@ -816,8 +794,7 @@ bool fip_master_compile_request(const fip_msg_t *message);
 fip_tag_request_result_t fip_master_tag_request(const fip_msg_t *message);
 
 /// @function `fip_master_receive_message_from`
-/// @brief Reads a message from stdin from a given IM id and stores it in the
-/// internal global buffer
+/// @brief Reads a message from stdin from a given IM id and stores it in the internal global buffer
 ///
 /// @param `id` The id of the slave to get the message from
 /// @return `bool` Whether a message was recieved
@@ -877,14 +854,14 @@ void fip_slave_send_message(const fip_msg_t *message, const uint32_t id);
 void fip_slave_cleanup();
 
 /// @function `fip_slave_load_config`
-/// @brief Loads the slave config from the `.fip/config/X.toml` where `X` is
-/// the name of the module (for example `fip-c`)
+/// @brief Loads the slave config from the `.fip/config/X.toml` where `X` is the name of the module
+///        (for example `fip-c`)
 ///
 /// @param `id` The ID of the slave that tries to load the config
 /// @param `module_name` The name of the module to load
-/// @return `toml_result_t` The loaded configuration toml file. Interpreting the
-/// content of this file is the responsibility of each interop module itself,
-/// the FIP protocol itself stays purely language-independant
+/// @return `toml_result_t` The loaded configuration toml file. Interpreting the content of this
+///                         file is the responsibility of each interop module itself, the FIP
+///                         protocol itself stays purely language-independant
 toml_result_t fip_slave_load_config( //
     const uint32_t id,               //
     const char *module_name          //
@@ -896,8 +873,7 @@ toml_result_t fip_slave_load_config( //
 
 #define FIP_LINE_BUF_SIZE 4096
 
-/// @brief The global internal buffer for encoding, decoding and all that fun
-/// stuff
+/// @brief The global internal buffer for encoding, decoding and all that fun stuff
 static char buffer[FIP_MSG_SIZE] = {0};
 
 /// @brief The global buffer write index
@@ -918,8 +894,8 @@ static const char *fip_msg_type_str[] = {
 };
 
 /// @var `fip_type_names`
-/// @brief A small array where the value at each enum index is the name of the
-/// type at that enum value
+/// @brief A small array where the value at each enum index is the name of the type at that enum
+///        value
 const char *fip_type_names[] = {
     "void",
     "u8",
@@ -1090,9 +1066,7 @@ void fip_print_msg(const fip_msg_t *message, const uint32_t id) {
                 message->u.con_req.version.minor,            //
                 message->u.con_req.version.patch             //
             );
-            fip_print(id, FIP_DEBUG, "  .module_name: %s", //
-                message->u.con_req.module_name             //
-            );
+            fip_print(id, FIP_DEBUG, "  .module_name: %s", message->u.con_req.module_name);
             fip_print(id, FIP_DEBUG, "}");
             break;
         case FIP_MSG_SYMBOL_REQUEST:
@@ -1180,41 +1154,23 @@ void fip_print_msg(const fip_msg_t *message, const uint32_t id) {
         case FIP_MSG_COMPILE_REQUEST:
             fip_print(id, FIP_DEBUG, "FIP_MSG_COMPILE_REQUEST: {");
             fip_print(id, FIP_DEBUG, "  .target: {");
-            fip_print(id, FIP_DEBUG, "    .arch: %s", //
-                message->u.com_req.target.arch        //
-            );
-            fip_print(id, FIP_DEBUG, "    .sub: %s", //
-                message->u.com_req.target.sub        //
-            );
-            fip_print(id, FIP_DEBUG, "    .vendor: %s", //
-                message->u.com_req.target.vendor        //
-            );
-            fip_print(id, FIP_DEBUG, "    .sys: %s", //
-                message->u.com_req.target.sys        //
-            );
-            fip_print(id, FIP_DEBUG, "    .abi: %s", //
-                message->u.com_req.target.abi        //
-            );
+            fip_print(id, FIP_DEBUG, "    .arch: %s", message->u.com_req.target.arch);
+            fip_print(id, FIP_DEBUG, "    .sub: %s", message->u.com_req.target.sub);
+            fip_print(id, FIP_DEBUG, "    .vendor: %s", message->u.com_req.target.vendor);
+            fip_print(id, FIP_DEBUG, "    .sys: %s", message->u.com_req.target.sys);
+            fip_print(id, FIP_DEBUG, "    .abi: %s", message->u.com_req.target.abi);
             fip_print(id, FIP_DEBUG, "  }");
             fip_print(id, FIP_DEBUG, "}");
             break;
         case FIP_MSG_OBJECT_RESPONSE:
             fip_print(id, FIP_DEBUG, "FIP_MSG_OBJECT_RESPONSE: {");
-            fip_print(id, FIP_DEBUG, "  .has_obj: %d", //
-                message->u.obj_res.has_obj             //
-            );
+            fip_print(id, FIP_DEBUG, "  .has_obj: %d", message->u.obj_res.has_obj);
             fip_print(id, FIP_DEBUG, "  .compilation_failed: %d", //
                 message->u.obj_res.compilation_failed             //
             );
-            fip_print(id, FIP_DEBUG, "  .module_name: %s", //
-                message->u.obj_res.module_name             //
-            );
-            fip_print(id, FIP_DEBUG, "  .path_count: %d", //
-                message->u.obj_res.path_count             //
-            );
-            fip_print(id, FIP_DEBUG, "  .paths: %s", //
-                message->u.obj_res.paths             //
-            );
+            fip_print(id, FIP_DEBUG, "  .module_name: %s", message->u.obj_res.module_name);
+            fip_print(id, FIP_DEBUG, "  .path_count: %d", message->u.obj_res.path_count);
+            fip_print(id, FIP_DEBUG, "  .paths: %s", message->u.obj_res.paths);
             fip_print(id, FIP_DEBUG, "}");
             break;
         case FIP_MSG_TAG_REQUEST:
@@ -1245,9 +1201,7 @@ void fip_print_msg(const fip_msg_t *message, const uint32_t id) {
                     case FIP_SIG_ALIAS:
                         fip_print(id, FIP_DEBUG, "  .type: ALIAS");
                         fip_print(id, FIP_DEBUG, "  .signature: {");
-                        fip_print_sig_alias(                        //
-                            &message->u.tag_sym_res.sig.u.alias, id //
-                        );
+                        fip_print_sig_alias(&message->u.tag_sym_res.sig.u.alias, id);
                         fip_print(id, FIP_DEBUG, "  }");
                         break;
                     case FIP_SIG_FUNCTION:
@@ -1259,25 +1213,19 @@ void fip_print_msg(const fip_msg_t *message, const uint32_t id) {
                     case FIP_SIG_DATA:
                         fip_print(id, FIP_DEBUG, "  .type: DATA");
                         fip_print(id, FIP_DEBUG, "  .signature: {");
-                        fip_print_sig_data(                        //
-                            &message->u.tag_sym_res.sig.u.data, id //
-                        );
+                        fip_print_sig_data(&message->u.tag_sym_res.sig.u.data, id);
                         fip_print(id, FIP_DEBUG, "  }");
                         break;
                     case FIP_SIG_ENUM:
                         fip_print(id, FIP_DEBUG, "  .type: ENUM");
                         fip_print(id, FIP_DEBUG, "  .signature: {");
-                        fip_print_sig_enum(                          //
-                            &message->u.tag_sym_res.sig.u.enum_t, id //
-                        );
+                        fip_print_sig_enum(&message->u.tag_sym_res.sig.u.enum_t, id);
                         fip_print(id, FIP_DEBUG, "  }");
                         break;
                     case FIP_SIG_OPAQUE:
                         fip_print(id, FIP_DEBUG, "  .type: OPAQUE");
                         fip_print(id, FIP_DEBUG, "  .signature: {");
-                        fip_print_sig_opaque(                        //
-                            &message->u.tag_sym_res.sig.u.opaque, id //
-                        );
+                        fip_print_sig_opaque(&message->u.tag_sym_res.sig.u.opaque, id);
                         fip_print(id, FIP_DEBUG, "  }");
                         break;
                 }
@@ -1316,9 +1264,7 @@ void fip_encode_type(const fip_type_t *type) {
                 memcpy(&buffer[b_idx], type->u.struct_t.name, type_name_len);
                 b_idx += type_name_len;
             }
-            memcpy(                                                           //
-                &buffer[b_idx], &type->u.struct_t.field_count, sizeof(size_t) //
-            );
+            memcpy(&buffer[b_idx], &type->u.struct_t.field_count, sizeof(size_t));
             b_idx += sizeof(size_t);
             for (size_t i = 0; i < type->u.struct_t.field_count; i++) {
                 fip_encode_type(&type->u.struct_t.fields[i]);
@@ -1388,10 +1334,9 @@ void fip_encode_sig_fn(const fip_sig_fn_t *sig) {
         memcpy(&buffer[b_idx], sig->name, name_len);
         b_idx += name_len;
     }
-    // Because each type is a simple char we can store them directly. But we
-    // need to store first how many types there are. For that we store the
-    // lengths directly in the buffer. The lengths are uint8_t's annyway
-    // because which function has more than 256 parameters or return types?
+    // Because each type is a simple char we can store them directly. But we need to store first how
+    // many types there are. For that we store the lengths directly in the buffer. The lengths are
+    // uint8_t's annyway because which function has more than 256 parameters or return types?
     memcpy(&buffer[b_idx], &sig->args_len, sizeof(size_t));
     b_idx += sizeof(size_t);
     for (size_t i = 0; i < sig->args_len; i++) {
@@ -1474,10 +1419,9 @@ void fip_encode_sig_opaque(const fip_sig_opaque_t *sig) {
 void fip_encode_msg(const fip_msg_t *message) {
     // Clear the buffer
     memset(buffer, 0, FIP_MSG_SIZE);
-    // The message always starts with the length of the message as a 4 byte
-    // uint32_teger and then the actual message follows. This is why the
-    // 'idx' starts at 4, since the first 4 bytes need to be filled with the
-    // size of the message itself
+    // The message always starts with the length of the message as a 4 byte uint32_teger and then
+    // the actual message follows. This is why the 'idx' starts at 4, since the first 4 bytes need
+    // to be filled with the size of the message itself
     // The first character in the buffer is the message type
     b_idx = 4;
     buffer[b_idx++] = message->tag;
@@ -1486,14 +1430,13 @@ void fip_encode_msg(const fip_msg_t *message) {
             // Sending unknown or faulty message
             break;
         case FIP_MSG_CONNECT_REQUEST:
-            // The connect request just puts the version info followed by the
-            // module name into the buffer and is done
+            // The connect request just puts the version info followed by the module name into the
+            // buffer and is done
             buffer[b_idx++] = (bool)message->u.con_req.setup_ok;
             buffer[b_idx++] = message->u.con_req.version.major;
             buffer[b_idx++] = message->u.con_req.version.minor;
             buffer[b_idx++] = message->u.con_req.version.patch;
-            memcpy(&buffer[b_idx], message->u.con_req.module_name,
-                FIP_MAX_MODULE_NAME_LEN);
+            memcpy(&buffer[b_idx], message->u.con_req.module_name, FIP_MAX_MODULE_NAME_LEN);
             b_idx += FIP_MAX_MODULE_NAME_LEN;
             break;
         case FIP_MSG_SYMBOL_REQUEST:
@@ -1520,11 +1463,9 @@ void fip_encode_msg(const fip_msg_t *message) {
             }
             break;
         case FIP_MSG_SYMBOL_RESPONSE:
-            // We place all elements into the buffer one by one until we come to
-            // the union
+            // We place all elements into the buffer one by one until we come to the union
             buffer[b_idx++] = message->u.sym_res.found;
-            memcpy(&buffer[b_idx], message->u.sym_res.module_name,
-                FIP_MAX_MODULE_NAME_LEN);
+            memcpy(&buffer[b_idx], message->u.sym_res.module_name, FIP_MAX_MODULE_NAME_LEN);
             b_idx += FIP_MAX_MODULE_NAME_LEN;
             buffer[b_idx++] = message->u.sym_res.sig.tag;
             switch (message->u.sym_res.sig.tag) {
@@ -1538,25 +1479,18 @@ void fip_encode_msg(const fip_msg_t *message) {
                     fip_encode_sig_fn(&message->u.sym_res.sig.u.fn);
                     break;
                 case FIP_SIG_DATA:
-                    fip_encode_sig_data(                   //
-                        &message->u.tag_sym_res.sig.u.data //
-                    );
+                    fip_encode_sig_data(&message->u.tag_sym_res.sig.u.data);
                     break;
                 case FIP_SIG_ENUM:
-                    fip_encode_sig_enum(                 //
-                        &message->u.sym_res.sig.u.enum_t //
-                    );
+                    fip_encode_sig_enum(&message->u.sym_res.sig.u.enum_t);
                     break;
                 case FIP_SIG_OPAQUE:
-                    fip_encode_sig_opaque(               //
-                        &message->u.sym_res.sig.u.opaque //
-                    );
+                    fip_encode_sig_opaque(&message->u.sym_res.sig.u.opaque);
                     break;
             }
             break;
         case FIP_MSG_COMPILE_REQUEST:
-            // The compile request places each 16 byte piece of it in the buffer
-            // directly
+            // The compile request places each 16 byte piece of it in the buffer directly
             memcpy(&buffer[b_idx], message->u.com_req.target.arch, 16);
             b_idx += 16;
             memcpy(&buffer[b_idx], message->u.com_req.target.sub, 16);
@@ -1569,12 +1503,10 @@ void fip_encode_msg(const fip_msg_t *message) {
             b_idx += 16;
             break;
         case FIP_MSG_OBJECT_RESPONSE: {
-            // The sizes of the buffers are known so we can put them into the
-            // buffer directly
+            // The sizes of the buffers are known so we can put them into the buffer directly
             buffer[b_idx++] = message->u.obj_res.has_obj;
             buffer[b_idx++] = message->u.obj_res.compilation_failed;
-            memcpy(&buffer[b_idx], message->u.obj_res.module_name,
-                FIP_MAX_MODULE_NAME_LEN);
+            memcpy(&buffer[b_idx], message->u.obj_res.module_name, FIP_MAX_MODULE_NAME_LEN);
             b_idx += FIP_MAX_MODULE_NAME_LEN;
             const size_t path_count = message->u.obj_res.path_count;
             memcpy(&buffer[b_idx], &path_count, sizeof(size_t));
@@ -1599,17 +1531,15 @@ void fip_encode_msg(const fip_msg_t *message) {
         case FIP_MSG_TAG_SYMBOL_RESPONSE:
             buffer[b_idx++] = message->u.tag_sym_res.is_empty;
             if (!message->u.tag_sym_res.is_empty) {
-                // Only encode the content if it's not empty, to make the
-                // message to send smaller in the empty case
+                // Only encode the content if it's not empty, to make the message to send smaller in
+                // the empty case
                 buffer[b_idx++] = message->u.tag_sym_res.sig.tag;
                 switch (message->u.tag_sym_res.sig.tag) {
                     case FIP_SIG_UNKNOWN:
                         assert(false && "TODO");
                         break;
                     case FIP_SIG_ALIAS:
-                        fip_encode_sig_alias(                   //
-                            &message->u.tag_sym_res.sig.u.alias //
-                        );
+                        fip_encode_sig_alias(&message->u.tag_sym_res.sig.u.alias);
                         break;
                     case FIP_SIG_FUNCTION:
                         fip_encode_sig_fn(&message->u.tag_sym_res.sig.u.fn);
@@ -1618,14 +1548,10 @@ void fip_encode_msg(const fip_msg_t *message) {
                         fip_encode_sig_data(&message->u.tag_sym_res.sig.u.data);
                         break;
                     case FIP_SIG_ENUM:
-                        fip_encode_sig_enum(                     //
-                            &message->u.tag_sym_res.sig.u.enum_t //
-                        );
+                        fip_encode_sig_enum(&message->u.tag_sym_res.sig.u.enum_t);
                         break;
                     case FIP_SIG_OPAQUE:
-                        fip_encode_sig_opaque(                   //
-                            &message->u.tag_sym_res.sig.u.opaque //
-                        );
+                        fip_encode_sig_opaque(&message->u.tag_sym_res.sig.u.opaque);
                         break;
                 }
             }
@@ -1737,16 +1663,13 @@ void fip_decode_sig_fn(fip_sig_fn_t *const sig) {
         memcpy(sig->name, &buffer[b_idx], name_len);
         b_idx += name_len;
     }
-    // Because each type is a simple char we can store them directly. But we
-    // need to store first how many types there are. For that we store the
-    // lengths directly in the buffer. The lengths are uint8_t's annyway
-    // because which function has more than 256 parameters or return types?
+    // Because each type is a simple char we can store them directly. But we need to store first how
+    // many types there are. For that we store the lengths directly in the buffer. The lengths are
+    // uint8_t's annyway because which function has more than 256 parameters or return types?
     memcpy(&sig->args_len, &buffer[b_idx], sizeof(size_t));
     b_idx += sizeof(size_t);
     if (sig->args_len > 0) {
-        sig->args = (fip_sig_fn_arg_t *)malloc(      //
-            sizeof(fip_sig_fn_arg_t) * sig->args_len //
-        );
+        sig->args = (fip_sig_fn_arg_t *)malloc(sizeof(fip_sig_fn_arg_t) * sig->args_len);
         for (size_t i = 0; i < sig->args_len; i++) {
             const uint8_t arg_name_len = buffer[b_idx++];
             memset(sig->args[i].name, 0, FIP_NAME_SIZE);
@@ -1807,9 +1730,7 @@ void fip_decode_sig_enum(fip_sig_enum_t *const sig) {
     memcpy(&sig->value_count, &buffer[b_idx], sizeof(size_t));
     b_idx += sizeof(size_t);
     // For enums we first stored all tags to reduce padding needs
-    sig->values = (fip_sig_enum_value_t *)malloc(       //
-        sizeof(fip_sig_enum_value_t) * sig->value_count //
-    );
+    sig->values = (fip_sig_enum_value_t *)malloc(sizeof(fip_sig_enum_value_t) * sig->value_count);
     for (size_t i = 0; i < sig->value_count; i++) {
         const uint8_t tag_len = buffer[b_idx++];
         memset(&sig->values[i].tag, 0, FIP_NAME_SIZE);
@@ -1820,10 +1741,7 @@ void fip_decode_sig_enum(fip_sig_enum_t *const sig) {
     }
     // And then we store all the values one after another
     for (size_t i = 0; i < sig->value_count; i++) {
-        memcpy(                                    //
-            &sig->values[i].value, &buffer[b_idx], //
-            sizeof(fip_type_enum_value_t)          //
-        );
+        memcpy(&sig->values[i].value, &buffer[b_idx], sizeof(fip_type_enum_value_t));
         b_idx += sizeof(fip_type_enum_value_t);
     }
 }
@@ -1846,14 +1764,12 @@ void fip_decode_msg(fip_msg_t *const message) {
             // Received unknown or faulty message
             break;
         case FIP_MSG_CONNECT_REQUEST:
-            // The connect request just puts the versions into the buffer one by
-            // one and is done
+            // The connect request just puts the versions into the buffer one by one and is done
             message->u.con_req.setup_ok = (bool)buffer[b_idx++];
             message->u.con_req.version.major = buffer[b_idx++];
             message->u.con_req.version.minor = buffer[b_idx++];
             message->u.con_req.version.patch = buffer[b_idx++];
-            memcpy(message->u.con_req.module_name, &buffer[b_idx],
-                FIP_MAX_MODULE_NAME_LEN);
+            memcpy(message->u.con_req.module_name, &buffer[b_idx], FIP_MAX_MODULE_NAME_LEN);
             break;
         case FIP_MSG_SYMBOL_REQUEST:
             message->u.sym_req.sig.tag = (fip_sig_tag_e)buffer[b_idx++];
@@ -1879,11 +1795,9 @@ void fip_decode_msg(fip_msg_t *const message) {
             }
             break;
         case FIP_MSG_SYMBOL_RESPONSE:
-            // We place all elements into the buffer one by one until we come to
-            // the union
+            // We place all elements into the buffer one by one until we come to the union
             message->u.sym_res.found = (bool)buffer[b_idx++];
-            memcpy(message->u.sym_res.module_name, &buffer[b_idx],
-                FIP_MAX_MODULE_NAME_LEN);
+            memcpy(message->u.sym_res.module_name, &buffer[b_idx], FIP_MAX_MODULE_NAME_LEN);
             b_idx += FIP_MAX_MODULE_NAME_LEN;
             message->u.sym_res.sig.tag = (fip_sig_tag_e)buffer[b_idx++];
             switch (message->u.sym_res.sig.tag) {
@@ -1908,8 +1822,7 @@ void fip_decode_msg(fip_msg_t *const message) {
             }
             break;
         case FIP_MSG_COMPILE_REQUEST:
-            // The compile request places each 16 byte piece of it in the buffer
-            // directly
+            // The compile request places each 16 byte piece of it in the buffer directly
             memcpy(message->u.com_req.target.arch, &buffer[b_idx], 16);
             b_idx += 16;
             memcpy(message->u.com_req.target.sub, &buffer[b_idx], 16);
@@ -1921,12 +1834,10 @@ void fip_decode_msg(fip_msg_t *const message) {
             memcpy(message->u.com_req.target.abi, &buffer[b_idx], 16);
             break;
         case FIP_MSG_OBJECT_RESPONSE: {
-            // The sizes of the buffers are known so we can read them from the
-            // buffer directly
+            // The sizes of the buffers are known so we can read them from the buffer directly
             message->u.obj_res.has_obj = (bool)buffer[b_idx++];
             message->u.obj_res.compilation_failed = (bool)buffer[b_idx++];
-            memcpy(message->u.obj_res.module_name, &buffer[b_idx],
-                FIP_MAX_MODULE_NAME_LEN);
+            memcpy(message->u.obj_res.module_name, &buffer[b_idx], FIP_MAX_MODULE_NAME_LEN);
             b_idx += FIP_MAX_MODULE_NAME_LEN;
             size_t path_count = 0;
             memcpy(&path_count, &buffer[b_idx], sizeof(size_t));
@@ -1950,17 +1861,15 @@ void fip_decode_msg(fip_msg_t *const message) {
         case FIP_MSG_TAG_SYMBOL_RESPONSE:
             message->u.tag_sym_res.is_empty = buffer[b_idx++];
             if (!message->u.tag_sym_res.is_empty) {
-                // Only decode the content if it's not empty, to make the
-                // message to send smaller in the empty case
+                // Only decode the content if it's not empty, to make the message to send smaller in
+                // the empty case
                 message->u.tag_sym_res.sig.tag = (fip_sig_tag_e)buffer[b_idx++];
                 switch (message->u.tag_sym_res.sig.tag) {
                     case FIP_SIG_UNKNOWN:
                         assert(false && "TODO");
                         break;
                     case FIP_SIG_ALIAS:
-                        fip_decode_sig_alias(                   //
-                            &message->u.tag_sym_res.sig.u.alias //
-                        );
+                        fip_decode_sig_alias(&message->u.tag_sym_res.sig.u.alias);
                         break;
                     case FIP_SIG_FUNCTION:
                         fip_decode_sig_fn(&message->u.tag_sym_res.sig.u.fn);
@@ -1969,14 +1878,10 @@ void fip_decode_msg(fip_msg_t *const message) {
                         fip_decode_sig_data(&message->u.tag_sym_res.sig.u.data);
                         break;
                     case FIP_SIG_ENUM:
-                        fip_decode_sig_enum(                     //
-                            &message->u.tag_sym_res.sig.u.enum_t //
-                        );
+                        fip_decode_sig_enum(&message->u.tag_sym_res.sig.u.enum_t);
                         break;
                     case FIP_SIG_OPAQUE:
-                        fip_decode_sig_opaque(                   //
-                            &message->u.tag_sym_res.sig.u.opaque //
-                        );
+                        fip_decode_sig_opaque(&message->u.tag_sym_res.sig.u.opaque);
                         break;
                 }
             }
@@ -2190,8 +2095,7 @@ void fip_free_msg(fip_msg_t *const message) {
         case FIP_MSG_TAG_NEXT_SYMBOL_REQUEST:
             break;
         case FIP_MSG_TAG_SYMBOL_RESPONSE: {
-            fip_msg_tag_symbol_response_t *const tag_sym_res =
-                &message->u.tag_sym_res;
+            fip_msg_tag_symbol_response_t *const tag_sym_res = &message->u.tag_sym_res;
             tag_sym_res->is_empty = false;
             switch (tag_sym_res->sig.tag) {
                 case FIP_SIG_UNKNOWN:
@@ -2331,20 +2235,18 @@ void fip_free_sig_list(fip_sig_list_t *const list) {
 
 void fip_create_hash(char hash[FIP_PATH_SIZE], const char *file_path) {
     // Valid characters: 1-9, A-Z, a-z (61 characters total)
-    // I choose to remove the '0' char as a possible character to have 61 total
-    // characters. This reduces the number of unique hashes only slighlty but it
-    // makes the char count a prime number, which hopefully increases the hash
-    // distribution, making overlaps much less likely to happen
+    // I choose to remove the '0' char as a possible character to have 61 total characters. This
+    // reduces the number of unique hashes only slighlty but it makes the char count a prime number,
+    // which hopefully increases the hash distribution, making overlaps much less likely to happen
     static const char charset[] = "123456789ABCDEFGHIJKLMNOPQRSTU"
                                   "VWXYZabcdefghijklmnopqrstuvwxyz";
     const int charset_size = 61;
 
     // Initialize hash buffer
-    // The value '0' means default and because the hash will not contain a 0 as
-    // it's not in it's char set we only need to check the first character to
-    // tell whether the hashing function succeeded or failed. Hashes do not need
-    // to end with a zero terminator, as we know the size of the hash at
-    // compile-time (8 Bytes)
+    // The value '0' means default and because the hash will not contain a 0 as it's not in it's
+    // char set we only need to check the first character to tell whether the hashing function
+    // succeeded or failed. Hashes do not need to end with a zero terminator, as we know the size of
+    // the hash at compile-time (8 Bytes)
     hash[0] = '0';
     size_t path_len = strlen(file_path);
     if (path_len == 0) {
@@ -2367,10 +2269,7 @@ void fip_create_hash(char hash[FIP_PATH_SIZE], const char *file_path) {
     }
 }
 
-const char *fip_type_to_string(   //
-    const fip_type_t *const type, //
-    const bool is_top_level       //
-) {
+const char *fip_type_to_string(const fip_type_t *const type, const bool is_top_level) {
     if (is_top_level) {
         b_idx = 0;
         memset(buffer, 0, FIP_MSG_SIZE);
@@ -2489,15 +2388,9 @@ void fip_print_sig_fn(const fip_sig_fn_t *const sig, const uint32_t id) {
     for (size_t i = 0; i < sig->args_len; i++) {
         fip_type_to_string(&sig->args[i].type, true);
         if (sig->args[i].type.is_mutable) {
-            fip_print(                                   //
-                id, FIP_DEBUG, "    arg[%u]: mut %s %s", //
-                i, buffer, sig->args[i].name             //
-            );
+            fip_print(id, FIP_DEBUG, "    arg[%u]: mut %s %s", i, buffer, sig->args[i].name);
         } else {
-            fip_print(                                     //
-                id, FIP_DEBUG, "    arg[%u]: const %s %s", //
-                i, buffer, sig->args[i].name               //
-            );
+            fip_print(id, FIP_DEBUG, "    arg[%u]: const %s %s", i, buffer, sig->args[i].name);
         }
     }
     for (size_t i = 0; i < sig->rets_len; i++) {
@@ -2531,29 +2424,19 @@ void fip_print_sig_enum(const fip_sig_enum_t *const sig, const uint32_t id) {
     for (size_t i = 0; i < sig->value_count; i++) {
         fip_sig_enum_value_t *const value = &sig->values[i];
         if (value->value.is_signed) {
-            fip_print(                                                       //
-                id, FIP_DEBUG, "    %s: -%u", value->tag, value->value.value //
-            );
+            fip_print(id, FIP_DEBUG, "    %s: -%u", value->tag, value->value.value);
         } else {
-            fip_print(                                                      //
-                id, FIP_DEBUG, "    %s: %u", value->tag, value->value.value //
-            );
+            fip_print(id, FIP_DEBUG, "    %s: %u", value->tag, value->value.value);
         }
     }
 }
 
-void fip_print_sig_opaque(             //
-    const fip_sig_opaque_t *const sig, //
-    const uint32_t id                  //
-) {
+void fip_print_sig_opaque(const fip_sig_opaque_t *const sig, const uint32_t id) {
     fip_print(id, FIP_DEBUG, "  Opaque Signature:");
     fip_print(id, FIP_DEBUG, "    name: %s", sig->name);
 }
 
-void fip_clone_sig_alias(             //
-    const fip_sig_alias_t *const src, //
-    fip_sig_alias_t *const dest       //
-) {
+void fip_clone_sig_alias(const fip_sig_alias_t *const src, fip_sig_alias_t *const dest) {
     memcpy(dest->name, src->name, FIP_NAME_SIZE);
     fip_clone_type(&src->type, &dest->type);
 }
@@ -2563,9 +2446,7 @@ void fip_clone_sig_fn(const fip_sig_fn_t *const src, fip_sig_fn_t *const dest) {
     dest->args_len = src->args_len;
     dest->args = NULL;
     if (src->args_len > 0) {
-        dest->args = (fip_sig_fn_arg_t *)malloc(     //
-            sizeof(fip_sig_fn_arg_t) * src->args_len //
-        );
+        dest->args = (fip_sig_fn_arg_t *)malloc(sizeof(fip_sig_fn_arg_t) * src->args_len);
         for (size_t i = 0; i < src->args_len; i++) {
             strcpy(dest->args[i].name, src->args[i].name);
             fip_clone_type(&src->args[i].type, &dest->args[i].type);
@@ -2581,10 +2462,7 @@ void fip_clone_sig_fn(const fip_sig_fn_t *const src, fip_sig_fn_t *const dest) {
     }
 }
 
-void fip_clone_sig_data(             //
-    const fip_sig_data_t *const src, //
-    fip_sig_data_t *const dest       //
-) {
+void fip_clone_sig_data(const fip_sig_data_t *const src, fip_sig_data_t *const dest) {
     memcpy(dest->name, src->name, FIP_NAME_SIZE);
     dest->field_count = src->field_count;
     dest->fields = NULL;
@@ -2603,10 +2481,7 @@ void fip_clone_sig_data(             //
     }
 }
 
-void fip_clone_sig_enum(             //
-    const fip_sig_enum_t *const src, //
-    fip_sig_enum_t *const dest       //
-) {
+void fip_clone_sig_enum(const fip_sig_enum_t *const src, fip_sig_enum_t *const dest) {
     memcpy(dest->name, src->name, FIP_NAME_SIZE);
     dest->type = src->type;
     dest->value_count = src->value_count;
@@ -2616,18 +2491,12 @@ void fip_clone_sig_enum(             //
             sizeof(fip_sig_enum_value_t) * src->value_count //
         );
         for (size_t i = 0; i < src->value_count; i++) {
-            memcpy(                                //
-                &dest->values[i], &src->values[i], //
-                sizeof(fip_sig_enum_value_t)       //
-            );
+            memcpy(&dest->values[i], &src->values[i], sizeof(fip_sig_enum_value_t));
         }
     }
 }
 
-void fip_clone_sig_opaque(             //
-    const fip_sig_opaque_t *const src, //
-    fip_sig_opaque_t *const dest       //
-) {
+void fip_clone_sig_opaque(const fip_sig_opaque_t *const src, fip_sig_opaque_t *const dest) {
     memcpy(dest->name, src->name, FIP_NAME_SIZE);
 }
 
@@ -2646,11 +2515,7 @@ void fip_clone_type(const fip_type_t *const src, fip_type_t *const dest) {
             const uint8_t type_name_len = strlen(src->u.struct_t.name);
             memset(dest->u.struct_t.name, 0, FIP_NAME_SIZE);
             if (type_name_len > 0) {
-                memcpy(                    //
-                    dest->u.struct_t.name, //
-                    src->u.struct_t.name,  //
-                    type_name_len          //
-                );
+                memcpy(dest->u.struct_t.name, src->u.struct_t.name, type_name_len);
             }
             dest->u.struct_t.field_count = src->u.struct_t.field_count;
             if (src->u.struct_t.field_count > 0) {
@@ -2658,19 +2523,13 @@ void fip_clone_type(const fip_type_t *const src, fip_type_t *const dest) {
                     sizeof(fip_type_t) * src->u.struct_t.field_count //
                 );
                 for (uint8_t i = 0; i < src->u.struct_t.field_count; i++) {
-                    fip_clone_type(                 //
-                        &src->u.struct_t.fields[i], //
-                        &dest->u.struct_t.fields[i] //
-                    );
+                    fip_clone_type(&src->u.struct_t.fields[i], &dest->u.struct_t.fields[i]);
                 }
             }
             break;
         }
         case FIP_TYPE_NAMED:
-            memcpy(                                    //
-                dest->u.named.name, src->u.named.name, //
-                FIP_NAME_SIZE                          //
-            );
+            memcpy(dest->u.named.name, src->u.named.name, FIP_NAME_SIZE);
             break;
         case FIP_TYPE_ENUM: {
             const uint8_t type_name_len = strlen(src->u.enum_t.name);
@@ -2682,11 +2541,8 @@ void fip_clone_type(const fip_type_t *const src, fip_type_t *const dest) {
             dest->u.enum_t.is_signed = src->u.enum_t.is_signed;
             dest->u.enum_t.value_count = src->u.enum_t.value_count;
             if (src->u.enum_t.value_count > 0) {
-                const size_t val_size = src->u.enum_t.value_count //
-                    * sizeof(fip_type_enum_value_t);
-                dest->u.enum_t.values = (fip_type_enum_value_t *)malloc( //
-                    val_size                                             //
-                );
+                const size_t val_size = src->u.enum_t.value_count * sizeof(fip_type_enum_value_t);
+                dest->u.enum_t.values = (fip_type_enum_value_t *)malloc(val_size);
                 memcpy(dest->u.enum_t.values, src->u.enum_t.values, val_size);
             }
             break;
@@ -2744,8 +2600,7 @@ int fip_execute_and_capture(char **output, const char *command) {
     si.hStdOutput = stdout_write;
     si.hStdError = stderr_write;
 
-    if (CreateProcessA(NULL, cmd_copy, NULL, NULL, TRUE, 0, NULL, NULL, &si,
-            &pi)) {
+    if (CreateProcessA(NULL, cmd_copy, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
         // Close child ends
         CloseHandle(stdout_write);
         CloseHandle(stderr_write);
@@ -2762,8 +2617,7 @@ int fip_execute_and_capture(char **output, const char *command) {
         // Read from both stdout and stderr
         HANDLE handles[2] = {stdout_read, stderr_read};
         for (int i = 0; i < 2; i++) {
-            while (ReadFile(handles[i], buf, sizeof(buf), &bytes_read, NULL) &&
-                bytes_read > 0) {
+            while (ReadFile(handles[i], buf, sizeof(buf), &bytes_read, NULL) && bytes_read > 0) {
                 if (total_size + bytes_read >= capacity) {
                     capacity *= 2;
                     *output = (char *)realloc(*output, capacity);
@@ -2862,8 +2716,8 @@ void fip_copy_stream_lines(FILE *const src, FILE *const dest) {
     if (PeekNamedPipe(handle, NULL, 0, NULL, &bytes_available, NULL)) {
         if (bytes_available > 0) {
             // Data is available, read it
-            size_t to_read = (bytes_available < sizeof(buf) - 1)
-                ? bytes_available
+            size_t to_read = (bytes_available < sizeof(buf) - 1) //
+                ? bytes_available                                //
                 : sizeof(buf) - 1;
             if (ReadFile(handle, buf, to_read, &bytes_read, NULL)) {
                 buf[bytes_read] = '\0';
@@ -2902,19 +2756,16 @@ void fip_print_slave_streams() {
 }
 
 void fip_master_broadcast_message(const fip_msg_t *message) {
-    fip_print(0, FIP_INFO, "Broadcasting message to %d slaves",
-        master_state.slave_count);
+    fip_print(0, FIP_INFO, "Broadcasting message to %d slaves", master_state.slave_count);
     fip_encode_msg(message);
     uint32_t msg_len;
     memcpy(&msg_len, buffer, sizeof(uint32_t));
 
     for (uint32_t i = 0; i < master_state.slave_count; i++) {
         if (master_state.slave_stdin[i]) {
-            size_t written =
-                fwrite(buffer, 1, msg_len + 4, master_state.slave_stdin[i]);
+            size_t written = fwrite(buffer, 1, msg_len + 4, master_state.slave_stdin[i]);
             if (written != (msg_len + 4)) {
-                fip_print(0, FIP_WARN, "Failed to write message to slave %d",
-                    i + 1);
+                fip_print(0, FIP_WARN, "Failed to write message to slave %d", i + 1);
                 continue;
             }
             fip_print(0, FIP_DEBUG, "Sent message to slave %d", i + 1);
@@ -2926,8 +2777,9 @@ void fip_master_broadcast_message(const fip_msg_t *message) {
 bool fip_master_symbol_request(const fip_msg_t *message) {
     assert(message->tag == FIP_MSG_SYMBOL_REQUEST);
     fip_master_broadcast_message(message);
-    uint8_t wrong_msg_count = fip_master_await_responses(master_state.responses,
-        &master_state.response_count, FIP_MSG_SYMBOL_RESPONSE);
+    uint8_t wrong_msg_count = fip_master_await_responses(                             //
+        master_state.responses, &master_state.response_count, FIP_MSG_SYMBOL_RESPONSE //
+    );
     if (wrong_msg_count > 0) {
         fip_print(0, FIP_WARN, "Received %u wrong messages", wrong_msg_count);
     }
@@ -2952,8 +2804,9 @@ bool fip_master_symbol_request(const fip_msg_t *message) {
 bool fip_master_compile_request(const fip_msg_t *message) {
     assert(message->tag == FIP_MSG_COMPILE_REQUEST);
     fip_master_broadcast_message(message);
-    uint8_t wrong_msg_count = fip_master_await_responses(master_state.responses,
-        &master_state.response_count, FIP_MSG_OBJECT_RESPONSE);
+    uint8_t wrong_msg_count = fip_master_await_responses(                             //
+        master_state.responses, &master_state.response_count, FIP_MSG_OBJECT_RESPONSE //
+    );
     if (wrong_msg_count > 0) {
         fip_print(0, FIP_WARN, "Received %u faulty messages", wrong_msg_count);
     }
@@ -2961,13 +2814,13 @@ bool fip_master_compile_request(const fip_msg_t *message) {
     for (uint8_t i = 0; i < master_state.response_count; i++) {
         const fip_msg_t *response = &master_state.responses[i];
         if (response->tag != FIP_MSG_OBJECT_RESPONSE) {
-            fip_print(0, FIP_ERROR, "Wrong message as response from slave %d",
-                i);
+            fip_print(0, FIP_ERROR, "Wrong message as response from slave %d", i);
             return false;
         }
         if (response->u.obj_res.has_obj) {
-            fip_print(0, FIP_INFO, "Object response from module: %s",
-                response->u.obj_res.module_name);
+            fip_print(                                                                          //
+                0, FIP_INFO, "Object response from module: %s", response->u.obj_res.module_name //
+            );
             fip_print(0, FIP_DEBUG, "Paths: %s", response->u.obj_res.paths);
         } else {
             fip_print(0, FIP_INFO, "Object response has no objects");
@@ -2981,10 +2834,8 @@ fip_tag_request_result_t fip_master_tag_request(const fip_msg_t *message) {
     fip_master_broadcast_message(message);
 
     // Await which slave has the tag
-    uint8_t wrong_msg_count = fip_master_await_responses( //
-        master_state.responses,                           //
-        &master_state.response_count,                     //
-        FIP_MSG_TAG_PRESENT_RESPONSE                      //
+    uint8_t wrong_msg_count = fip_master_await_responses(                                  //
+        master_state.responses, &master_state.response_count, FIP_MSG_TAG_PRESENT_RESPONSE //
     );
     if (wrong_msg_count > 0) {
         fip_print(0, FIP_ERROR, "Received %u faulty messages", wrong_msg_count);
@@ -3012,10 +2863,7 @@ fip_tag_request_result_t fip_master_tag_request(const fip_msg_t *message) {
         };
     }
     if (module_with_tag_count > 1) {
-        fip_print(                                              //
-            0, FIP_ERROR, "Tag %s present in more than one IM", //
-            message->u.tag_req.tag                              //
-        );
+        fip_print(0, FIP_ERROR, "Tag %s present in more than one IM", message->u.tag_req.tag);
         return (fip_tag_request_result_t){
             .status = FIP_TAG_REQUEST_STATUS_ERR_AMBIGUOUS_TAG,
             .list = NULL,
@@ -3026,11 +2874,10 @@ fip_tag_request_result_t fip_master_tag_request(const fip_msg_t *message) {
     uint8_t slave_index = module_with_tag_id;
     FILE *slave_in = master_state.slave_stdin[module_with_tag_id];
 
-    // We keep sending `FIP_MSG_TAG_NEXT_SYMBOL_REQUEST` to the slave and we
-    // will recieve `FIP_MSG_TAG_SYMBOL_RESPONSE` messages from the slave until
-    // the symbol is empty, indicating the end of the list. We first tell the
-    // slave to "give" us the next message, then it sends the message contianing
-    // the empty symbol.
+    // We keep sending `FIP_MSG_TAG_NEXT_SYMBOL_REQUEST` to the slave and we will recieve
+    // `FIP_MSG_TAG_SYMBOL_RESPONSE` messages from the slave until the symbol is empty, indicating
+    // the end of the list. We first tell the slave to "give" us the next message, then it sends the
+    // message contianing the empty symbol.
     fip_sig_list_t *sig_list = (fip_sig_list_t *)malloc(sizeof(fip_sig_list_t));
     sig_list->count = 0;
     while (true) {
@@ -3055,8 +2902,7 @@ fip_tag_request_result_t fip_master_tag_request(const fip_msg_t *message) {
         // Simple timeout using non-blocking read
         while (!fip_master_receive_message_from(module_with_tag_id)) {
             fip_print_slave_streams();
-            fip_print(0, FIP_WARN, "No message from slave %u yet...",
-                module_with_tag_id);
+            fip_print(0, FIP_WARN, "No message from slave %u yet...", module_with_tag_id);
         }
         fip_print_slave_streams();
 
@@ -3064,24 +2910,23 @@ fip_tag_request_result_t fip_master_tag_request(const fip_msg_t *message) {
         fip_msg_t incoming;
         fip_decode_msg(&incoming);
         if (incoming.tag != FIP_MSG_TAG_SYMBOL_RESPONSE) {
-            fip_print(0, FIP_ERROR,
-                "Received unexpected response from slave %u: %s (expected %s)",
-                slave_index + 1, fip_msg_type_str[incoming.tag],
-                fip_msg_type_str[FIP_MSG_TAG_SYMBOL_RESPONSE]);
+            fip_print(                                                                        //
+                0, FIP_ERROR, "Received unexpected response from slave %u: %s (expected %s)", //
+                slave_index + 1, fip_msg_type_str[incoming.tag],                              //
+                fip_msg_type_str[FIP_MSG_TAG_SYMBOL_RESPONSE]                                 //
+            );
             fip_print_slave_streams();
             break;
         }
         // Handle end of symbol list
         if (incoming.u.tag_sym_res.is_empty) {
-            fip_print(0, FIP_DEBUG, "Slave %u indicated end of symbol list",
-                slave_index + 1);
+            fip_print(0, FIP_DEBUG, "Slave %u indicated end of symbol list", slave_index + 1);
             fip_free_msg(&incoming);
             break;
         }
         // Append a new entry to sig_list
-        sig_list = (fip_sig_list_t *)realloc(sig_list,    //
-            sizeof(fip_sig_list_t) +                      //
-                sizeof(fip_sig_t) * (sig_list->count + 1) //
+        sig_list = (fip_sig_list_t *)realloc(                                            //
+            sig_list, sizeof(fip_sig_list_t) + sizeof(fip_sig_t) * (sig_list->count + 1) //
         );
         // Pointer to the freshly appended fip_sig_t
         fip_sig_t *const last_sig = &sig_list->sigs[sig_list->count];
@@ -3092,34 +2937,22 @@ fip_tag_request_result_t fip_master_tag_request(const fip_msg_t *message) {
             case FIP_SIG_UNKNOWN:
                 break;
             case FIP_SIG_ALIAS:
-                fip_clone_sig_alias(                                        //
-                    &incoming.u.tag_sym_res.sig.u.alias, &last_sig->u.alias //
-                );
+                fip_clone_sig_alias(&incoming.u.tag_sym_res.sig.u.alias, &last_sig->u.alias);
                 break;
             case FIP_SIG_FUNCTION: {
-                fip_clone_sig_fn(                                     //
-                    &incoming.u.tag_sym_res.sig.u.fn, &last_sig->u.fn //
-                );
+                fip_clone_sig_fn(&incoming.u.tag_sym_res.sig.u.fn, &last_sig->u.fn);
                 break;
             }
             case FIP_SIG_DATA: {
-                fip_clone_sig_data(                                       //
-                    &incoming.u.tag_sym_res.sig.u.data, &last_sig->u.data //
-                );
+                fip_clone_sig_data(&incoming.u.tag_sym_res.sig.u.data, &last_sig->u.data);
                 break;
             }
             case FIP_SIG_ENUM: {
-                fip_clone_sig_enum(                       //
-                    &incoming.u.tag_sym_res.sig.u.enum_t, //
-                    &last_sig->u.enum_t                   //
-                );
+                fip_clone_sig_enum(&incoming.u.tag_sym_res.sig.u.enum_t, &last_sig->u.enum_t);
                 break;
             }
             case FIP_SIG_OPAQUE: {
-                fip_clone_sig_opaque(                     //
-                    &incoming.u.tag_sym_res.sig.u.opaque, //
-                    &last_sig->u.opaque                   //
-                );
+                fip_clone_sig_opaque(&incoming.u.tag_sym_res.sig.u.opaque, &last_sig->u.opaque);
                 break;
             }
         }
@@ -3135,8 +2968,7 @@ fip_tag_request_result_t fip_master_tag_request(const fip_msg_t *message) {
 bool fip_master_receive_message_from(const uint32_t id) {
     FILE *slave_stdout = master_state.slave_stdout[id];
     if (slave_stdout == NULL) {
-        fip_print(0, FIP_ERROR, "Cannot receive msg from nonexistent slave %u",
-            id);
+        fip_print(0, FIP_ERROR, "Cannot receive msg from nonexistent slave %u", id);
     }
     uint32_t msg_len;
     if (fread(&msg_len, 1, 4, slave_stdout) != 4) {
@@ -3212,9 +3044,7 @@ void fip_slave_send_message(const fip_msg_t *message, const uint32_t id) {
     fip_encode_msg(message);
     uint32_t msg_len;
     memcpy(&msg_len, buffer, sizeof(uint32_t));
-    size_t written_bytes = fwrite(                    //
-        buffer, 1, msg_len + sizeof(uint32_t), stdout //
-    );
+    size_t written_bytes = fwrite(buffer, 1, msg_len + sizeof(uint32_t), stdout);
     if (written_bytes != msg_len + 4) {
         fip_print(id, FIP_ERROR, "Failed to write message");
         return;
@@ -3224,10 +3054,9 @@ void fip_slave_send_message(const fip_msg_t *message, const uint32_t id) {
 }
 
 void fip_slave_open_log(const uint32_t id) {
-    // Redirect stderr to a log file inside the project's `.fip` directory so
-    // that the slave never blocks on the stderr pipe it shares with the master
-    // (the master only drains it after the blocking stdout read, so a slave
-    // which floods stderr would otherwise deadlock with it).
+    // Redirect stderr to a log file inside the project's `.fip` directory so that the slave never
+    // blocks on the stderr pipe it shares with the master (the master only drains it after the
+    // blocking stdout read, so a slave which floods stderr would otherwise deadlock with it).
     char path[FIP_NAME_SIZE] = {0};
 #ifdef _WIN32
     CreateDirectoryA(".fip", NULL);
@@ -3239,14 +3068,12 @@ void fip_slave_open_log(const uint32_t id) {
     snprintf(path, sizeof(path), ".fip/log/slave_%u.log", id);
 #endif
     if (freopen(path, "w", stderr) != NULL) {
-        // Make sure every write is flushed immediately so the log is always
-        // up to date (stderr becomes fully buffered after freopen)
+        // Make sure every write is flushed immediately so the log is always up to date (stderr
+        // becomes fully buffered after freopen)
         setvbuf(stderr, NULL, _IONBF, 0);
         fip_print(id, FIP_INFO, "Logging to file: %s", path);
     } else {
-        fip_print(                                                         //
-            id, FIP_WARN, "Could not open log file %s, using stderr", path //
-        );
+        fip_print(id, FIP_WARN, "Could not open log file %s, using stderr", path);
     }
 }
 
@@ -3277,7 +3104,7 @@ typedef struct {
     HANDLE stdin_write;
     HANDLE stdout_read;
     HANDLE stderr_read;
-    pid_t pid; // For compatibility with existing code
+    pid_t pid;
 } win_process_info_t;
 
 static win_process_info_t win_processes[FIP_MAX_SLAVES];
@@ -3333,10 +3160,7 @@ bool fip_spawn_interop_module(      //
         GetStdHandle(STD_ERROR_HANDLE),
     };
     for (int i = 0; i < 3; i++) {
-        if (                                             //
-            parent_std_ids[i] == NULL                    //
-            || parent_std_ids[i] == INVALID_HANDLE_VALUE //
-        ) {
+        if (parent_std_ids[i] == NULL || parent_std_ids[i] == INVALID_HANDLE_VALUE) {
             continue;
         }
         DWORD flags = 0;
@@ -3348,19 +3172,14 @@ bool fip_spawn_interop_module(      //
         }
     }
 
-    bool spawned = CreateProcessA(                                    //
-        NULL, cmdline, NULL, NULL, TRUE, 0, NULL, root_path, &si, &pi //
-    );
+    bool spawned = CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0, NULL, root_path, &si, &pi);
     for (int i = 0; i < parent_std_count; i++) {
-        SetHandleInformation(                         //
-            parent_std[i], HANDLE_FLAG_INHERIT,       //
-            parent_std_flags[i] & HANDLE_FLAG_INHERIT //
+        SetHandleInformation(                                                             //
+            parent_std[i], HANDLE_FLAG_INHERIT, parent_std_flags[i] & HANDLE_FLAG_INHERIT //
         );
     }
     if (!spawned) {
-        fip_print(                                                          //
-            0, FIP_WARN, "Failed to spawn slave %s: %d", id, GetLastError() //
-        );
+        fip_print(0, FIP_WARN, "Failed to spawn slave %s: %d", id, GetLastError());
         CloseHandle(stdin_read);
         CloseHandle(stdin_write);
         CloseHandle(stdout_read);
@@ -3387,12 +3206,9 @@ bool fip_spawn_interop_module(      //
     modules->pids[modules->active_count] = pi.dwProcessId;
 
     // Convert to FILE streams
-    int stdin_fd =
-        _open_osfhandle((intptr_t)stdin_write, _O_WRONLY | _O_BINARY);
-    int stdout_fd =
-        _open_osfhandle((intptr_t)stdout_read, _O_RDONLY | _O_BINARY);
-    int stderr_fd =
-        _open_osfhandle((intptr_t)stderr_read, _O_RDONLY | _O_BINARY);
+    int stdin_fd = _open_osfhandle((intptr_t)stdin_write, _O_WRONLY | _O_BINARY);
+    int stdout_fd = _open_osfhandle((intptr_t)stdout_read, _O_RDONLY | _O_BINARY);
+    int stderr_fd = _open_osfhandle((intptr_t)stderr_read, _O_RDONLY | _O_BINARY);
 
     master_state.slave_stdin[modules->active_count] = _fdopen(stdin_fd, "wb");
     master_state.slave_stdout[modules->active_count] = _fdopen(stdout_fd, "rb");
@@ -3400,8 +3216,7 @@ bool fip_spawn_interop_module(      //
 
     if (!master_state.slave_stdin[modules->active_count] ||
         !master_state.slave_stdout[modules->active_count]) {
-        fip_print(0, FIP_ERROR, "Failed to create FILE streams for slave %s",
-            id);
+        fip_print(0, FIP_ERROR, "Failed to create FILE streams for slave %s", id);
         return false;
     }
 
@@ -3429,9 +3244,10 @@ void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
 bool fip_master_init(fip_interop_modules_t *modules) {
     master_state.slave_count = modules->active_count;
     master_state.response_count = 0;
-    fip_print(0, FIP_INFO,
-        "Master initialized for stdio communication with %d slaves",
-        master_state.slave_count);
+    fip_print(                                                                    //
+        0, FIP_INFO, "Master initialized for stdio communication with %d slaves", //
+        master_state.slave_count                                                  //
+    );
     return true;
 }
 
@@ -3458,39 +3274,38 @@ uint8_t fip_master_await_responses(        //
         // Simple timeout using non-blocking read
         uint32_t msg_len;
         if (fread(&msg_len, 1, 4, master_state.slave_stdout[i]) != 4) {
-            fip_print(0, FIP_WARN,
-                "Failed to read message length from slave %d", i + 1);
+            fip_print(0, FIP_WARN, "Failed to read message length from slave %d", i + 1);
             wrong_count++;
             continue;
         }
 
         if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
-            fip_print(0, FIP_WARN, "Invalid message length from slave %d: %u",
-                i + 1, msg_len);
+            fip_print(0, FIP_WARN, "Invalid message length from slave %d: %u", i + 1, msg_len);
             wrong_count++;
             continue;
         }
 
         memset(buffer, 0, FIP_MSG_SIZE);
-        if (fread(buffer, 1, msg_len, master_state.slave_stdout[i]) !=
-            msg_len) {
-            fip_print(0, FIP_WARN,
-                "Failed to read complete message from slave %d", i + 1);
+        if (fread(buffer, 1, msg_len, master_state.slave_stdout[i]) != msg_len) {
+            fip_print(0, FIP_WARN, "Failed to read complete message from slave %d", i + 1);
             wrong_count++;
             continue;
         }
 
         fip_decode_msg(buffer, &responses[*response_count]);
-        fip_print(0, FIP_INFO, "Received message from slave %d: %s", i + 1,
-            fip_msg_type_str[responses[*response_count].type]);
+        fip_print(                                                   //
+            0, FIP_INFO, "Received message from slave %d: %s",       //
+            i + 1, fip_msg_type_str[responses[*response_count].type] //
+        );
 
         if (responses[*response_count].type != expected_msg_type) {
             wrong_count++;
         }
 
         (*response_count)++;
-        if (*response_count >= FIP_MAX_SLAVES)
+        if (*response_count >= FIP_MAX_SLAVES) {
             break;
+        }
     }
 
     // Print all the debug output of all the slaves
@@ -3509,8 +3324,7 @@ fip_master_config_t fip_master_load_config(const char *config_path) {
     toml_result_t toml = toml_parse_file(fp);
     fclose(fp);
     if (!toml.ok) {
-        fip_print(0, FIP_ERROR, "Failed to parse fip.toml file: %s",
-            toml.errmsg);
+        fip_print(0, FIP_ERROR, "Failed to parse fip.toml file: %s", toml.errmsg);
         return config;
     }
 
@@ -3528,19 +3342,20 @@ fip_master_config_t fip_master_load_config(const char *config_path) {
         }
         toml_datum_t enabled = toml_get(section, "enable");
         if (enabled.type != TOML_BOOLEAN || !enabled.u.boolean) {
-            fip_print(0, FIP_WARN,
-                "Module %s is disabled or missing enable field", section_name);
+            fip_print(0, FIP_WARN, "Module %s is disabled or missing enable field", section_name);
             continue;
         }
         if (config.enabled_count >= FIP_MAX_ENABLED_MODULES) {
-            fip_print(0, FIP_ERROR, "There are too many active modules (%d)!",
-                config.enabled_count);
+            fip_print(                                                                        //
+                0, FIP_ERROR, "There are too many active modules (%d)!", config.enabled_count //
+            );
             continue;
         }
-        strncpy(config.enabled_modules[config.enabled_count], section_name,
-            FIP_MAX_MODULE_NAME_LEN - 1);
-        config.enabled_modules[config.enabled_count]
-                              [FIP_MAX_MODULE_NAME_LEN - 1] = '\0';
+        strncpy(                                                        //
+            config.enabled_modules[config.enabled_count], section_name, //
+            FIP_MAX_MODULE_NAME_LEN - 1                                 //
+        );
+        config.enabled_modules[config.enabled_count][FIP_MAX_MODULE_NAME_LEN - 1] = '\0';
         config.enabled_count++;
         fip_print(0, FIP_INFO, "Enabled module: %s", section_name);
     }
@@ -3570,24 +3385,20 @@ bool fip_slave_init(uint32_t slave_id) {
     return true;
 }
 
-toml_result_t fip_slave_load_config( //
-    const uint32_t id,               //
-    const char *module_name          //
-) {
+toml_result_t fip_slave_load_config(const uint32_t id, const char *module_name) {
     char file_path[64] = {0};
     snprintf(file_path, sizeof(file_path), ".fip/config/%s.toml", module_name);
     toml_result_t toml = {0};
     toml.ok = false;
     FILE *fp = fopen(file_path, "r");
-    if (!fp) {
+    if (fp == NULL) {
         fip_print(id, FIP_ERROR, "Config file not found: %s", file_path);
         return toml;
     }
     toml = toml_parse_file(fp);
     fclose(fp);
     if (!toml.ok) {
-        fip_print(id, FIP_ERROR, "Failed to parse %s.toml file: %s",
-            module_name, toml.errmsg);
+        fip_print(id, FIP_ERROR, "Failed to parse %s.toml file: %s", module_name, toml.errmsg);
         return toml;
     }
     return toml;
@@ -3627,15 +3438,14 @@ bool fip_spawn_interop_module(      //
     fip_print(0, FIP_INFO, "Spawning slave %s...", id);
 
     // Create pipes for communication with slave
-    int stdin_pipe[2];  // master writes to stdin_pipe[1], slave reads from
-                        // stdin_pipe[0]
-    int stdout_pipe[2]; // slave writes to stdout_pipe[1], master reads from
-                        // stdout_pipe[0]
-    int stderr_pipe[2]; // slave writes to stderr_pipe[1], master reads from
-                        // stderr_pipe[0]
+    int stdin_pipe[2];  // master writes to stdin_pipe[1],
+                        // slave reads from stdin_pipe[0]
+    int stdout_pipe[2]; // slave writes to stdout_pipe[1],
+                        // master reads from stdout_pipe[0]
+    int stderr_pipe[2]; // slave writes to stderr_pipe[1],
+                        // master reads from stderr_pipe[0]
 
-    if (pipe(stdin_pipe) == -1 || pipe(stdout_pipe) == -1 ||
-        pipe(stderr_pipe) == -1) {
+    if (pipe(stdin_pipe) == -1 || pipe(stdout_pipe) == -1 || pipe(stderr_pipe) == -1) {
         fip_print(0, FIP_ERROR, "Failed to create pipes for slave %s", id);
         return false;
     }
@@ -3657,15 +3467,17 @@ bool fip_spawn_interop_module(      //
     if (pid == 0) {
         // Child: set up child's end of pipes, change cwd, exec
 
-        // Redirect child's stdin/stdout/stderr to pipes
-        // Child should read from stdin_pipe[0], write to stdout_pipe[1],
-        // stderr_pipe[1]
-        if (dup2(stdin_pipe[0], STDIN_FILENO) == -1)
+        // Redirect child's stdin/stdout/stderr to pipes Child should read from stdin_pipe[0], write
+        // to stdout_pipe[1], stderr_pipe[1]
+        if (dup2(stdin_pipe[0], STDIN_FILENO) == -1) {
             _exit(127);
-        if (dup2(stdout_pipe[1], STDOUT_FILENO) == -1)
+        }
+        if (dup2(stdout_pipe[1], STDOUT_FILENO) == -1) {
             _exit(127);
-        if (dup2(stderr_pipe[1], STDERR_FILENO) == -1)
+        }
+        if (dup2(stderr_pipe[1], STDERR_FILENO) == -1) {
             _exit(127);
+        }
 
         // Close unused descriptors in child
         close(stdin_pipe[0]);
@@ -3678,13 +3490,11 @@ bool fip_spawn_interop_module(      //
         // Change working directory to root directoy
         if (chdir(root_path) != 0) {
             // cannot change dir => fatal for child
-            // You can log to stderr but prefer to exit
             perror("chdir");
             _exit(127);
         }
 
-        // Execute the module. Use execvp so PATH lookup behaves like
-        // posix_spawn did.
+        // Execute the module. Use execvp so PATH lookup behaves like posix_spawn did.
         execvp(_module, argv);
 
         // If execvp returns, it failed
@@ -3701,18 +3511,14 @@ bool fip_spawn_interop_module(      //
     modules->pids[modules->active_count] = pid;
 
     // Store master's ends of the pipes
-    master_state.slave_stdin[modules->active_count] =
-        fdopen(stdin_pipe[1], "w");
-    master_state.slave_stdout[modules->active_count] =
-        fdopen(stdout_pipe[0], "r");
-    master_state.slave_stderr[modules->active_count] =
-        fdopen(stderr_pipe[0], "r");
+    master_state.slave_stdin[modules->active_count] = fdopen(stdin_pipe[1], "w");
+    master_state.slave_stdout[modules->active_count] = fdopen(stdout_pipe[0], "r");
+    master_state.slave_stderr[modules->active_count] = fdopen(stderr_pipe[0], "r");
 
     if (!master_state.slave_stdin[modules->active_count] ||
         !master_state.slave_stdout[modules->active_count] ||
         !master_state.slave_stderr[modules->active_count]) {
-        fip_print(0, FIP_ERROR, "Failed to create FILE streams for slave %s",
-            id);
+        fip_print(0, FIP_ERROR, "Failed to create FILE streams for slave %s", id);
         // Cleanup: if needed, kill child? up to your policy. We'll close fds.
         close(stdin_pipe[1]);
         close(stdout_pipe[0]);
@@ -3725,9 +3531,8 @@ bool fip_spawn_interop_module(      //
 }
 
 void fip_terminate_all_slaves(fip_interop_modules_t *modules) {
-    // We terminate all slaves as their workloads must have been finished by
-    // now (the master has collected the results in the form of the .o
-    // files)
+    // We terminate all slaves as their workloads must have been finished by now (the master has
+    // collected the results in the form of the .o files)
     for (uint8_t i = 0; i < modules->active_count; i++) {
         if (kill(modules->pids[i], 0)) {
             // Is still running and we are allowed to kill it
@@ -3748,9 +3553,10 @@ bool fip_master_init(fip_interop_modules_t *modules) {
     master_state.slave_count = modules->active_count;
     master_state.response_count = 0;
 
-    fip_print(0, FIP_INFO,
-        "Master initialized for stdio communication with %d slaves",
-        master_state.slave_count);
+    fip_print(                                                                    //
+        0, FIP_INFO, "Master initialized for stdio communication with %d slaves", //
+        master_state.slave_count                                                  //
+    );
     return true;
 }
 
@@ -3787,9 +3593,7 @@ uint8_t fip_master_await_responses(      //
         }
 
         int stdout_fd = fileno(master_state.slave_stdout[i]);
-        int stderr_fd = master_state.slave_stderr[i]
-            ? fileno(master_state.slave_stderr[i])
-            : -1;
+        int stderr_fd = master_state.slave_stderr[i] ? fileno(master_state.slave_stderr[i]) : -1;
 
         fd_set read_fds;
         struct timeval timeout;
@@ -3807,9 +3611,10 @@ uint8_t fip_master_await_responses(      //
                 ((double)(now.tv_nsec - start.tv_nsec) / 1000000000.0);
 
             if (elapsed > FIP_TIMEOUT) {
-                fip_print(0, FIP_WARN,
-                    "Timeout waiting for slave %d response for %f seconds",
-                    i + 1, elapsed);
+                fip_print(                                                               //
+                    0, FIP_WARN, "Timeout waiting for slave %d response for %f seconds", //
+                    i + 1, elapsed                                                       //
+                );
                 wrong_count++;
                 break;
             }
@@ -3820,8 +3625,9 @@ uint8_t fip_master_await_responses(      //
             int max_fd = stdout_fd;
             if (stderr_fd >= 0) {
                 FD_SET(stderr_fd, &read_fds);
-                if (stderr_fd > max_fd)
+                if (stderr_fd > max_fd) {
                     max_fd = stderr_fd;
+                }
             }
 
             double remaining = FIP_TIMEOUT - elapsed;
@@ -3840,8 +3646,7 @@ uint8_t fip_master_await_responses(      //
             if (stderr_fd >= 0) {
                 char stderr_buf[FIP_LINE_BUF_SIZE];
                 ssize_t n;
-                while ((n = read(stderr_fd, stderr_buf,
-                            sizeof(stderr_buf) - 1)) > 0) {
+                while ((n = read(stderr_fd, stderr_buf, sizeof(stderr_buf) - 1)) > 0) {
                     stderr_buf[n] = '\0';
                     fprintf(stderr, "%s", stderr_buf);
                     fflush(stderr);
@@ -3853,17 +3658,16 @@ uint8_t fip_master_await_responses(      //
                 // Read message length (4 bytes)
                 uint32_t msg_len;
                 if (fread(&msg_len, 1, 4, master_state.slave_stdout[i]) != 4) {
-                    fip_print(0, FIP_WARN,
-                        "Failed to read message length from slave %d", i + 1);
+                    fip_print(0, FIP_WARN, "Failed to read message length from slave %d", i + 1);
                     wrong_count++;
                     break;
                 }
 
                 // Validate message length
                 if (msg_len == 0 || msg_len > FIP_MSG_SIZE - 4) {
-                    fip_print(0, FIP_WARN,
-                        "Invalid message length from slave %d: %u", i + 1,
-                        msg_len);
+                    fip_print(                                                                  //
+                        0, FIP_WARN, "Invalid message length from slave %d: %u", i + 1, msg_len //
+                    );
                     wrong_count++;
                     break;
                 }
@@ -3871,18 +3675,18 @@ uint8_t fip_master_await_responses(      //
 
                 // Read message data
                 memset(buffer, 0, FIP_MSG_SIZE);
-                if (fread(buffer, 1, msg_len, master_state.slave_stdout[i]) !=
-                    msg_len) {
-                    fip_print(0, FIP_WARN,
-                        "Failed to read complete message from slave %d", i + 1);
+                if (fread(buffer, 1, msg_len, master_state.slave_stdout[i]) != msg_len) {
+                    fip_print(0, FIP_WARN, "Failed to read complete message from slave %d", i + 1);
                     wrong_count++;
                     break;
                 }
 
                 // Decode message
                 fip_decode_msg(&responses[*response_count]);
-                fip_print(0, FIP_INFO, "Received message from slave %d: %s",
-                    i + 1, fip_msg_type_str[responses[*response_count].tag]);
+                fip_print(                                                  //
+                    0, FIP_INFO, "Received message from slave %d: %s",      //
+                    i + 1, fip_msg_type_str[responses[*response_count].tag] //
+                );
 
                 if (responses[*response_count].tag != expected_msg_tag) {
                     wrong_count++;
@@ -3911,8 +3715,7 @@ uint8_t fip_master_await_responses(      //
             int stderr_fd = fileno(master_state.slave_stderr[i]);
             char stderr_buf[FIP_LINE_BUF_SIZE];
             ssize_t n;
-            while (
-                (n = read(stderr_fd, stderr_buf, sizeof(stderr_buf) - 1)) > 0) {
+            while ((n = read(stderr_fd, stderr_buf, sizeof(stderr_buf) - 1)) > 0) {
                 stderr_buf[n] = '\0';
                 fprintf(stderr, "%s", stderr_buf);
                 fflush(stderr);
@@ -3935,13 +3738,11 @@ fip_master_config_t fip_master_load_config(const char *config_path) {
     fclose(fp);
     // Check for parse error
     if (!toml.ok) {
-        fip_print(0, FIP_ERROR, "Failed to parse fip.toml file: %s",
-            toml.errmsg);
+        fip_print(0, FIP_ERROR, "Failed to parse fip.toml file: %s", toml.errmsg);
         return config;
     }
 
-    // The toptab is a table, so it not being a table should have been a parse
-    // error
+    // The toptab is a table, so it not being a table should have been a parse error
     if (toml.toptab.type != TOML_TABLE) {
         assert(false);
     }
@@ -3961,8 +3762,7 @@ fip_master_config_t fip_master_load_config(const char *config_path) {
         // Look for "enable" key in this section
         toml_datum_t enabled = toml_get(section, "enable");
         if (enabled.type != TOML_BOOLEAN || !enabled.u.boolean) {
-            fip_print(0, FIP_WARN,
-                "Module %s is disabled or missing enable field", section_name);
+            fip_print(0, FIP_WARN, "Module %s is disabled or missing enable field", section_name);
             continue;
         }
 
@@ -3974,10 +3774,11 @@ fip_master_config_t fip_master_load_config(const char *config_path) {
         }
 
         // Add to enabled modules list
-        strncpy(config.enabled_modules[config.enabled_count], section_name,
-            FIP_MAX_MODULE_NAME_LEN - 1);
-        config.enabled_modules[config.enabled_count]
-                              [FIP_MAX_MODULE_NAME_LEN - 1] = '\0';
+        strncpy(                                                        //
+            config.enabled_modules[config.enabled_count], section_name, //
+            FIP_MAX_MODULE_NAME_LEN - 1                                 //
+        );
+        config.enabled_modules[config.enabled_count][FIP_MAX_MODULE_NAME_LEN - 1] = '\0';
         config.enabled_count++;
         fip_print(0, FIP_INFO, "Enabled module: %s", section_name);
     }
@@ -4004,24 +3805,20 @@ bool fip_slave_init(uint32_t slave_id) {
     return true;
 }
 
-toml_result_t fip_slave_load_config( //
-    const uint32_t id,               //
-    const char *module_name          //
-) {
+toml_result_t fip_slave_load_config(const uint32_t id, const char *module_name) {
     char file_path[64] = {0};
     snprintf(file_path, sizeof(file_path), ".fip/config/%s.toml", module_name);
     toml_result_t toml = {0};
     toml.ok = false;
     FILE *fp = fopen(file_path, "r");
-    if (!fp) {
+    if (fp == NULL) {
         fip_print(id, FIP_ERROR, "Config file not found: %s", file_path);
         return toml;
     }
     toml = toml_parse_file(fp);
     fclose(fp);
     if (!toml.ok) {
-        fip_print(id, FIP_ERROR, "Failed to parse %s.toml file: %s",
-            module_name, toml.errmsg);
+        fip_print(id, FIP_ERROR, "Failed to parse %s.toml file: %s", module_name, toml.errmsg);
         return toml;
     }
 
