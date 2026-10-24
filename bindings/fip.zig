@@ -69,6 +69,34 @@ pub const LogLevel = enum(u8) {
     trace,
 };
 
+/// Resolves `named` type references on the "self" side of a comparison and tracks which definitions are currently being
+/// expanded in order to cut cycles.
+///
+/// One side of a comparison (the symbol owner's) references types by name (`named`), the other side (the master's extern
+/// request) is always fully structural and only carries `recursive(levels_back)` markers where a definition references itself.
+pub const Resolver = struct {
+    /// Maps a type name to the signature of the symbol defining it (`.data`, `.@"enum"`, `.alias` or `.@"opaque"`)
+    /// Returns null when no definition carries that name. This function needs to be set by the slave as the FIP library does
+    /// not know anything about the slave itself at all.
+    get_type: *const fn (name: []const u8) ?*const Signature,
+    /// The definition signatures currently being expanded (the ancestor path)
+    expanding: [MAX_EXPANDING]*const Signature = undefined,
+    expanding_len: usize = 0,
+
+    /// Maximum amount of nested data definitions expanded during a single comparison
+    pub const MAX_EXPANDING = 32;
+    /// Maximum amount of alias hops followed during a single `named` resolution
+    pub const MAX_ALIAS_HOPS = 16;
+
+    /// Returns the stack index of `sig` if it is currently being expanded, else null
+    pub fn expanding_index(self: *const Resolver, sig: *const Signature) ?usize {
+        for (0..self.expanding_len) |i| {
+            if (self.expanding[i] == sig) return i;
+        }
+        return null;
+    }
+};
+
 /// The struct representing a type in FIP
 pub const Type = extern struct {
     is_mutable: bool = false,
@@ -121,8 +149,8 @@ pub const Type = extern struct {
     pub const Pointer = extern struct {
         base_type: *Type,
 
-        pub fn equals(self: *const Pointer, other: *const Pointer) bool {
-            return self.base_type.equals(other.base_type);
+        pub fn equals(self: *const Pointer, other: *const Pointer, r: *Resolver) bool {
+            return self.base_type.equals(other.base_type, r);
         }
     };
 
@@ -132,15 +160,14 @@ pub const Type = extern struct {
         field_count: usize = 0,
         fields: [*]Type = undefined,
 
-        pub fn equals(self: *const Struct, other: *const Struct) bool {
-            if (!std.mem.eql(u8, &self.name, &other.name)) {
-                return false;
-            }
+        pub fn equals(self: *const Struct, other: *const Struct, r: *Resolver) bool {
+            // The name comparison is skipped because the name of the master and slave signatures may differ, we only care about
+            // structural identity here
             if (self.field_count != other.field_count) {
                 return false;
             }
             for (0..self.field_count) |i| {
-                if (!self.fields[i].equals(&other.fields[i])) {
+                if (!self.fields[i].equals(&other.fields[i], r)) {
                     return false;
                 }
             }
@@ -158,15 +185,65 @@ pub const Type = extern struct {
     pub const Named = extern struct {
         name: [NAME_SIZE:0]u8 = @splat(0),
 
-        pub fn equals(self: *const Named, other: *const Type) bool {
-            return switch (other.tag) {
-                .primitive => false,
-                .pointer => false,
-                .@"struct" => std.mem.eql(u8, &self.name, &other.u.@"struct".name),
-                .named => std.mem.eql(u8, &self.name, &other.u.named.name),
-                .@"enum" => std.mem.eql(u8, &self.name, &other.u.@"enum".name),
-                .array => false,
-                .@"opaque" => std.mem.eql(u8, &self.name, &other.u.@"opaque".name),
+        pub fn equals(self: *const Named, other: *const Type, r: *Resolver) bool {
+            var sig: *const Signature = r.get_type(std.mem.sliceTo(&self.name, 0)) orelse return false;
+
+            // Alias chains are resolved transparently, aliases never become definition frames
+            var hops: usize = 0;
+            while (sig.tag == .alias) {
+                hops += 1;
+                if (hops >= Resolver.MAX_ALIAS_HOPS) {
+                    return false; // Alias cycle, no definition to compare against
+                }
+                const alias_type: *const Type = &sig.u.alias.type;
+                if (alias_type.tag != .named) {
+                    // Structurally-defined alias target: compare it directly. `equals_structural`
+                    // is used because the alias *definition* carries no meaningful mutability
+                    return alias_type.equals_structural(other, r);
+                }
+                sig = r.get_type(std.mem.sliceTo(&alias_type.u.named.name, 0)) orelse return false;
+            }
+
+            // Cycle cut: this definition is already being expanded further up the ancestor path,
+            // so this is a back-edge which must match the extern side's `recursive` marker
+            if (r.expanding_index(sig)) |index| {
+                const levels_back: u8 = @intCast(r.expanding_len - index);
+                return other.tag == .recursive and other.u.recursive.levels_back == levels_back;
+            }
+
+            return switch (sig.tag) {
+                .data => blk: {
+                    if (other.tag != .@"struct") break :blk false;
+                    const data = &sig.u.data;
+                    const strct = &other.u.@"struct";
+                    if (data.field_count != strct.field_count) break :blk false;
+                    if (r.expanding_len == r.expanding.len) break :blk false; // Nesting too deep
+                    // Push the definition frame; the defer pops it on every exit path
+                    r.expanding[r.expanding_len] = sig;
+                    r.expanding_len += 1;
+                    defer r.expanding_len -= 1;
+                    for (0..data.field_count) |i| {
+                        if (!data.fields[i].type.equals(&strct.fields[i], r)) break :blk false;
+                    }
+                    break :blk true;
+                },
+                .@"enum" => blk: {
+                    if (other.tag != .@"enum") break :blk false;
+                    const e = &sig.u.@"enum";
+                    const other_e = &other.u.@"enum";
+                    if (e.value_count != other_e.value_count) break :blk false;
+                    // `bit_width`/`is_signed` are not compared: `Signature.Enum.type` is not
+                    // filled by the slave and all C enums are `int`-sized like Flint enums
+                    for (0..e.value_count) |i| {
+                        if (!e.values[i].value.equals(other_e.values[i])) break :blk false;
+                    }
+                    break :blk true;
+                },
+                .@"opaque" => other.tag == .@"opaque" and
+                    std.mem.eql(u8, &sig.u.@"opaque".name, &other.u.@"opaque".name),
+                // A function or unknown symbol can never be a type definition
+                .@"fn", .unknown => false,
+                .alias => unreachable, // Resolved by the loop above
             };
         }
     };
@@ -190,9 +267,8 @@ pub const Type = extern struct {
         };
 
         pub fn equals(self: *const Enum, other: *const Enum) bool {
-            if (!std.mem.eql(u8, &self.name, &other.name)) {
-                return false;
-            }
+            // The name comparison is skipped because the name of the master and slave signatures may differ, we only care about
+            // structural identity here
             if (self.bit_width != other.bit_width) {
                 return false;
             }
@@ -216,9 +292,9 @@ pub const Type = extern struct {
         size: usize = 0,
         base_type: *Type,
 
-        pub fn equals(self: *const Array, other: *const Array) bool {
+        pub fn equals(self: *const Array, other: *const Array, r: *Resolver) bool {
             return self.size == other.size and
-                self.base_type.equals(other.base_type);
+                self.base_type.equals(other.base_type, r);
         }
     };
 
@@ -235,21 +311,33 @@ pub const Type = extern struct {
     pub const clone = clone_type;
     pub const free = free_type;
 
-    pub fn equals(self: *const Type, other: *const Type) bool {
+    pub fn equals(self: *const Type, other: *const Type, r: *Resolver) bool {
         if (self.is_mutable != other.is_mutable) {
             return false;
         }
-        if (self.tag != .named and self.tag != other.tag) {
-            return false;
-        }
+        return equals_structural(self, other, r);
+    }
+
+    /// `equals` without the top-level `is_mutable` check. Used when comparing a *resolved* type definition against the extern type:
+    /// the definition itself (a data/alias symbol) carries no meaningful mutability, only its use-site does
+    pub fn equals_structural(self: *const Type, other: *const Type, r: *Resolver) bool {
         return switch (self.tag) {
-            .primitive => self.u.primitive == other.u.primitive,
-            .pointer => self.u.pointer.equals(&other.u.pointer),
-            .@"struct" => self.u.@"struct".equals(&other.u.@"struct"),
-            .named => self.u.named.equals(other),
-            .@"enum" => self.u.@"enum".equals(&other.u.@"enum"),
-            .array => self.u.array.equals(&other.u.array),
-            .@"opaque" => self.u.@"opaque".equals(&other.u.@"opaque"),
+            .named => self.u.named.equals(other, r),
+            .recursive => @panic("Slave is not allowed to emit recursive types"),
+            else => switch (other.tag) {
+                .named => @panic("Master is not allowed to emit named types"),
+                // Recursive types from master can only be resolved with named types from slave (above)
+                .recursive => false,
+                else => if (self.tag != other.tag) false else switch (self.tag) {
+                    .primitive => self.u.primitive == other.u.primitive,
+                    .pointer => self.u.pointer.equals(&other.u.pointer, r),
+                    .@"struct" => self.u.@"struct".equals(&other.u.@"struct", r),
+                    .@"enum" => self.u.@"enum".equals(&other.u.@"enum"),
+                    .array => self.u.array.equals(&other.u.array, r),
+                    .@"opaque" => self.u.@"opaque".equals(&other.u.@"opaque"),
+                    .named, .recursive => unreachable,
+                },
+            },
         };
     }
 };
@@ -276,9 +364,9 @@ pub const Signature = extern struct {
         pub const print = print_sig_alias;
         pub const clone = clone_sig_alias;
 
-        pub fn equals(self: *const Alias, other: *const Alias) bool {
+        pub fn equals(self: *const Alias, other: *const Alias, r: *Resolver) bool {
             return std.mem.eql(u8, &self.name, &other.name) and
-                self.type.equals(&other.type);
+                self.type.equals(&other.type, r);
         }
     };
 
@@ -299,7 +387,7 @@ pub const Signature = extern struct {
         pub const print = print_sig_fn;
         pub const clone = clone_sig_fn;
 
-        pub fn equals(self: *const Fn, other: *const Fn) bool {
+        pub fn equals(self: *const Fn, other: *const Fn, r: *Resolver) bool {
             if (!std.mem.eql(u8, &self.name, &other.name)) {
                 return false;
             }
@@ -308,12 +396,12 @@ pub const Signature = extern struct {
             }
             for (0..self.args_len) |i| {
                 // Don't compare the names, as signature equidity is only determined by the type of the argument
-                if (!self.args[i].type.equals(&other.args[i].type)) {
+                if (!self.args[i].type.equals(&other.args[i].type, r)) {
                     return false;
                 }
             }
             for (0..self.rets_len) |i| {
-                if (!self.rets[i].equals(&other.rets[i])) {
+                if (!self.rets[i].equals(&other.rets[i], r)) {
                     return false;
                 }
             }
@@ -334,7 +422,7 @@ pub const Signature = extern struct {
         pub const print = print_sig_data;
         pub const clone = clone_sig_data;
 
-        pub fn equals(self: *const Data, other: *const Data) bool {
+        pub fn equals(self: *const Data, other: *const Data, r: *Resolver) bool {
             if (!std.mem.eql(u8, &self.name, &other.name)) {
                 return false;
             }
@@ -343,7 +431,7 @@ pub const Signature = extern struct {
             }
             for (0..self.field_count) |i| {
                 // Don't compare the names, as signature equidity is only determined by the type of the field
-                if (!self.fields[i].type.equals(&other.fields[i].type)) {
+                if (!self.fields[i].type.equals(&other.fields[i].type, r)) {
                     return false;
                 }
             }
@@ -421,15 +509,15 @@ pub const Signature = extern struct {
         }
     }
 
-    pub fn equals(self: *const Signature, other: *const Signature) bool {
+    pub fn equals(self: *const Signature, other: *const Signature, r: *Resolver) bool {
         if (self.tag != other.tag) {
             return false;
         }
         return switch (self.tag) {
             .unknown => false,
-            .alias => self.u.alias.equals(&other.u.alias),
-            .@"fn" => self.u.@"fn".equals(&other.u.@"fn"),
-            .data => self.u.data.equals(&other.u.data),
+            .alias => self.u.alias.equals(&other.u.alias, r),
+            .@"fn" => self.u.@"fn".equals(&other.u.@"fn", r),
+            .data => self.u.data.equals(&other.u.data, r),
             .@"enum" => self.u.@"enum".equals(&other.u.@"enum"),
             .@"opaque" => self.u.@"opaque".equals(&other.u.@"opaque"),
         };
