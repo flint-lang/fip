@@ -80,6 +80,7 @@ pub const Type = extern struct {
         primitive: Primitive,
         pointer: Pointer,
         @"struct": Struct,
+        recursive: Recursive,
         named: Named,
         @"enum": Enum,
         array: Array,
@@ -145,6 +146,11 @@ pub const Type = extern struct {
             }
             return true;
         }
+    };
+
+    /// The struct representing recursive / repeating types, only needed for symbol requests and such
+    pub const Recursive = extern struct {
+        levels_back: u8,
     };
 
     /// The struct representing named types, to reduce the amount of re-typing.

@@ -166,6 +166,17 @@ typedef struct {
     struct fip_type_t *fields;
 } fip_type_struct_t;
 
+/// @typedef `fip_type_recursive_t`
+/// @brief The struct representing recursive / repeating types
+///
+/// @note Recursive types are only used during symbol and signature resolving over the wire.
+///       Both the master and the slave actually store recursive types as named types internally,
+///       but since names could differ between the master and the slave, recursive types are the
+///       only way to have name-agnostic strucutral equidity checking in place.
+typedef struct {
+    uint8_t levels_back;
+} fip_type_recursive_t;
+
 /// @typedef `fip_type_named_t`
 /// @brief The struct representing named types, to reduce the amount of re-typing.
 ///        A self-referential type contains a named type, for example, or all later references of
@@ -210,6 +221,7 @@ typedef enum fip_type_tag_e : uint8_t {
     FIP_TYPE_PRIMITIVE,
     FIP_TYPE_PTR,
     FIP_TYPE_STRUCT,
+    FIP_TYPE_RECURSIVE,
     FIP_TYPE_NAMED,
     FIP_TYPE_ENUM,
     FIP_TYPE_ARRAY,
@@ -225,6 +237,7 @@ typedef struct fip_type_t {
         fip_type_prim_e prim;
         fip_type_ptr_t ptr;
         fip_type_struct_t struct_t;
+        fip_type_recursive_t recursive;
         fip_type_named_t named;
         fip_type_enum_t enum_t;
         fip_type_array_t array;
@@ -1271,6 +1284,9 @@ void fip_encode_type(const fip_type_t *type) {
             }
             break;
         }
+        case FIP_TYPE_RECURSIVE:
+            buffer[b_idx++] = (char)type->u.recursive.levels_back;
+            break;
         case FIP_TYPE_NAMED: {
             const uint8_t type_name_len = strlen(type->u.named.name);
             buffer[b_idx++] = type_name_len;
@@ -1597,6 +1613,9 @@ void fip_decode_type(fip_type_t *const type) {
             }
             break;
         }
+        case FIP_TYPE_RECURSIVE:
+            type->u.recursive.levels_back = (uint8_t)buffer[b_idx++];
+            break;
         case FIP_TYPE_NAMED: {
             const uint8_t type_name_len = buffer[b_idx++];
             memset(type->u.named.name, 0, FIP_NAME_SIZE);
@@ -1908,6 +1927,8 @@ void fip_free_type(fip_type_t *const type) {
                 }
                 free(type->u.struct_t.fields);
             }
+            break;
+        case FIP_TYPE_RECURSIVE:
             break;
         case FIP_TYPE_NAMED:
             break;
@@ -2298,6 +2319,31 @@ const char *fip_type_to_string(const fip_type_t *const type, const bool is_top_l
             }
             buffer[b_idx++] = '}';
             break;
+        case FIP_TYPE_RECURSIVE: {
+            buffer[b_idx++] = 'r';
+            buffer[b_idx++] = 'e';
+            buffer[b_idx++] = 'c';
+            buffer[b_idx++] = 'u';
+            buffer[b_idx++] = 'r';
+            buffer[b_idx++] = 's';
+            buffer[b_idx++] = 'i';
+            buffer[b_idx++] = 'v';
+            buffer[b_idx++] = 'e';
+            buffer[b_idx++] = '(';
+            uint8_t level = type->u.recursive.levels_back;
+            uint8_t part_100 = level / 100;
+            uint8_t part_10 = (level - part_100 * 100) / 10;
+            uint8_t part_1 = level - part_100 * 100 - part_10 * 10;
+            if (level >= 100) {
+                buffer[b_idx++] = (char)('0' + part_100);
+            }
+            if (level >= 10) {
+                buffer[b_idx++] = (char)('0' + part_10);
+            }
+            buffer[b_idx++] = (char)('0' + part_1);
+            buffer[b_idx++] = ')';
+            break;
+        }
         case FIP_TYPE_NAMED: {
             buffer[b_idx++] = 'n';
             buffer[b_idx++] = 'a';
@@ -2528,6 +2574,9 @@ void fip_clone_type(const fip_type_t *const src, fip_type_t *const dest) {
             }
             break;
         }
+        case FIP_TYPE_RECURSIVE:
+            dest->u.recursive.levels_back = src->u.recursive.levels_back;
+            break;
         case FIP_TYPE_NAMED:
             memcpy(dest->u.named.name, src->u.named.name, FIP_NAME_SIZE);
             break;
