@@ -150,7 +150,7 @@ pub const Type = extern struct {
         base_type: *Type,
 
         pub fn equals(self: *const Pointer, other: *const Pointer, r: *Resolver) bool {
-            return self.base_type.equals(other.base_type, r);
+            return self.base_type.equals(other.base_type, r, false);
         }
     };
 
@@ -167,7 +167,7 @@ pub const Type = extern struct {
                 return false;
             }
             for (0..self.field_count) |i| {
-                if (!self.fields[i].equals(&other.fields[i], r)) {
+                if (!self.fields[i].equals(&other.fields[i], r, false)) {
                     return false;
                 }
             }
@@ -223,7 +223,7 @@ pub const Type = extern struct {
                     r.expanding_len += 1;
                     defer r.expanding_len -= 1;
                     for (0..data.field_count) |i| {
-                        if (!data.fields[i].type.equals(&strct.fields[i], r)) break :blk false;
+                        if (!data.fields[i].type.equals(&strct.fields[i], r, false)) break :blk false;
                     }
                     break :blk true;
                 },
@@ -294,7 +294,7 @@ pub const Type = extern struct {
 
         pub fn equals(self: *const Array, other: *const Array, r: *Resolver) bool {
             return self.size == other.size and
-                self.base_type.equals(other.base_type, r);
+                self.base_type.equals(other.base_type, r, false);
         }
     };
 
@@ -311,9 +311,17 @@ pub const Type = extern struct {
     pub const clone = clone_type;
     pub const free = free_type;
 
-    pub fn equals(self: *const Type, other: *const Type, r: *Resolver) bool {
-        if (self.is_mutable != other.is_mutable) {
-            return false;
+    /// The `ptrs_can_differ` flag is expected to only be true when calling this function when resolving function parameters and return types
+    pub fn equals(self: *const Type, other: *const Type, r: *Resolver, ptrs_can_differ: bool) bool {
+        // If we are at depth 0 the mutability of the pointer itself does not matter, only the mutability of the pointed-to value
+        if (!ptrs_can_differ or self.tag != .pointer or other.tag != .pointer) {
+            // The master may be more mutable than the slave. If the "implementation" is immutable its not a problem for the master if it
+            // expects it to be mutable. But if the implementation is mutable and the master expects something immutable then we have an error.
+            // self -> slave
+            // other -> master
+            if (self.is_mutable and !other.is_mutable) {
+                return false;
+            }
         }
         return equals_structural(self, other, r);
     }
@@ -366,7 +374,7 @@ pub const Signature = extern struct {
 
         pub fn equals(self: *const Alias, other: *const Alias, r: *Resolver) bool {
             return std.mem.eql(u8, &self.name, &other.name) and
-                self.type.equals(&other.type, r);
+                self.type.equals(&other.type, r, false);
         }
     };
 
@@ -396,12 +404,12 @@ pub const Signature = extern struct {
             }
             for (0..self.args_len) |i| {
                 // Don't compare the names, as signature equidity is only determined by the type of the argument
-                if (!self.args[i].type.equals(&other.args[i].type, r)) {
+                if (!self.args[i].type.equals(&other.args[i].type, r, true)) {
                     return false;
                 }
             }
             for (0..self.rets_len) |i| {
-                if (!self.rets[i].equals(&other.rets[i], r)) {
+                if (!self.rets[i].equals(&other.rets[i], r, true)) {
                     return false;
                 }
             }
@@ -431,7 +439,7 @@ pub const Signature = extern struct {
             }
             for (0..self.field_count) |i| {
                 // Don't compare the names, as signature equidity is only determined by the type of the field
-                if (!self.fields[i].type.equals(&other.fields[i].type, r)) {
+                if (!self.fields[i].type.equals(&other.fields[i].type, r, false)) {
                     return false;
                 }
             }
