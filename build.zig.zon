@@ -2,7 +2,7 @@
     .name = .fip,
     .version = "0.4.1",
     .fingerprint = 0x5721cf5239f7718d, // Changing this has security and trust implications.
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .tomlc17 = .{
             .url = "https://github.com/cktan/tomlc17/archive/refs/tags/R250712.tar.gz",

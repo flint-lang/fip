@@ -1050,12 +1050,12 @@ pub const slave = if (defines.lib_mode != .slave) @compileError("lib_mode != .sl
 
 test "test" {
     inline for (comptime std.meta.declarations(@This())) |decl| {
-        if (comptime std.mem.eql(u8, decl.name, "master") or
-            std.mem.eql(u8, decl.name, "slave"))
+        if (comptime std.mem.eql(u8, decl, "master") or
+            std.mem.eql(u8, decl, "slave"))
         {
             continue;
         }
-        _ = &@field(@This(), decl.name);
+        _ = &@field(@This(), decl);
     }
 
     if (defines.lib_mode == .master) {
