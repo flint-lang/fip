@@ -1,4 +1,5 @@
-#pragma once
+#ifndef FIP_H
+#define FIP_H
 
 // #define FIP_DEBUG_MODE
 
@@ -27,6 +28,7 @@
 #define FIP_IMPLEMENTATION // For debugging purposes
 #define FIP_MASTER
 #define FIP_SLAVE
+// #define _WIN32
 #endif
 
 #include <tomlc17.h>
@@ -881,6 +883,8 @@ toml_result_t fip_slave_load_config( //
 );
 
 #endif // End of #ifdef FIP_SLAVE
+
+#endif // End of #ifdef FIP_H
 
 #ifdef FIP_IMPLEMENTATION
 
@@ -2384,7 +2388,7 @@ const char *fip_type_to_string(const fip_type_t *const type, const bool is_top_l
                 if (value->is_signed) {
                     buffer[b_idx++] = '-';
                 }
-                int wrote = snprintf(&buffer[b_idx], 20, "%lu", value->value);
+                int wrote = snprintf(&buffer[b_idx], 20, "%llu", value->value);
                 if (wrote < 0) {
                     wrote = 0;
                 }
@@ -3300,10 +3304,10 @@ bool fip_master_init(fip_interop_modules_t *modules) {
     return true;
 }
 
-uint8_t fip_master_await_responses(        //
-    fip_msg_t responses[FIP_MAX_SLAVES],   //
-    uint32_t *response_count,              //
-    const fip_msg_type_e expected_msg_type //
+uint8_t fip_master_await_responses(      //
+    fip_msg_t responses[FIP_MAX_SLAVES], //
+    uint32_t *response_count,            //
+    const fip_msg_tag_e expected_msg_tag //
 ) {
     fip_print(0, FIP_INFO, "Awaiting Responses");
 
@@ -3341,13 +3345,13 @@ uint8_t fip_master_await_responses(        //
             continue;
         }
 
-        fip_decode_msg(buffer, &responses[*response_count]);
-        fip_print(                                                   //
-            0, FIP_INFO, "Received message from slave %d: %s",       //
-            i + 1, fip_msg_type_str[responses[*response_count].type] //
+        fip_decode_msg(&responses[*response_count]);
+        fip_print(                                                  //
+            0, FIP_INFO, "Received message from slave %d: %s",      //
+            i + 1, fip_msg_type_str[responses[*response_count].tag] //
         );
 
-        if (responses[*response_count].type != expected_msg_type) {
+        if (responses[*response_count].tag != expected_msg_tag) {
             wrong_count++;
         }
 
